@@ -1,0 +1,65 @@
+# Virtual environment
+bin/
+lib/
+lib64/
+include/
+share/
+pyvenv.cfg
+pip-selfcheck.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Session data (contains credentials)
+sessions/
+
+# Exfiltration output
+exfil/
+
+# Logs
+logs/
+
+# GCP credential JSON key files (SA keys in project root)
+*.json
+!package.json
+!package-lock.json
+!requirements.json
+!tsconfig.json
+
+# Claude Code memory & plans
+.claude/
+
+# AWS Credentials
+.aws/
+aws_credentials
+
+# Azure Credentials
+.azure/
+
+# Temp files
+*.tmp
+*.bak
+
+# Implementation & work documents (internal dev notes)
+CLI_ICONS_*.md
+ICON_*.md
+*_IMPLEMENTATION_*.md
+*_ANALYSIS.md
+NOTES.md
+SYSTEM.md
+GUIDELINES.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+token.txt
