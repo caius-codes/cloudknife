@@ -81,7 +81,7 @@ By using this tool, you acknowledge that you understand and accept these terms.
 ### Setup
 
 ```bash
-git clone https://github.com/caius-code/cloudknife.git
+git clone https://github.com/caius-codes/cloudknife.git
 cd cloudknife
 python -m venv venv
 source venv/bin/activate  # Linux/macOS
