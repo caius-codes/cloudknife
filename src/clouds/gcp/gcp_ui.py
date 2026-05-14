@@ -155,6 +155,7 @@ def print_help():
         ("describe_cloud_build [build_id] [project]", "Describe Cloud Build with logs (may contain API keys, passwords, credentials in build output)"),
         ("enumerate_sql", "List Cloud SQL instances (MySQL, PostgreSQL, SQL Server) with databases, users, and security settings"),
         ("enumerate_secrets [project]", "List Secret Manager secrets and versions in a project"),
+        ("enumerate_source_repos", "List Google Source Repositories (code repos) with IAM policies and mirror configs across projects"),
         ("enumerate_storage", "List Cloud Storage buckets (public access, IAM, encryption) across projects"),
         ("search_drive [keyword1] [keyword2] ...", "Search Google Drive for files with sensitive keywords (default: password, secret, key, token)"),
         ("list_shared_drive [public]", "List shared Google Drive files (use 'public' to show only publicly accessible files)"),
@@ -185,6 +186,8 @@ def print_help():
         ("generate_jwt [--template id] [options]", "Generate self-signed JWT with custom claims"),
         ("exchange_jwt <jwt_token>", "Exchange JWT for OAuth access token"),
         # Exfiltration
+        ("clone_all_source_repos [project] [output_dir]", "Clone all Source Repositories from a project (uses session credentials including impersonation)"),
+        ("clone_source_repo [repo] [project] [output_dir]", "Clone a single Source Repository (useful when only specific SAs have access)"),
         ("download_artifact", "Download artifacts from Artifact Registry (Docker images, packages, etc.)"),
         ("download_object <bucket> <object>", "Download a single object from a bucket"),
         ("exfil_bucket <bucket> [prefix]", "Download all objects from a bucket (with size/count limits)"),

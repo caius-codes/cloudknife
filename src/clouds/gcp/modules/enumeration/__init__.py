@@ -39,6 +39,7 @@ from .sa_exploitation_targets import (
 )
 from .secret_manager import enumerate_secrets
 from .service_account_iam import get_service_account_iam_policy
+from .source_repositories import enumerate_source_repositories
 from .storage_buckets import enumerate_storage_buckets
 from .storage_objects import enumerate_bucket_objects
 
@@ -69,6 +70,7 @@ __all__ = [
     "enumerate_parameters",
     "enumerate_resource_permissions",
     "enumerate_secrets",
+    "enumerate_source_repositories",
     "enumerate_storage_buckets",
     "get_service_account_iam_policy",
     "list_predefined_roles",
