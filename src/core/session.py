@@ -9,6 +9,22 @@ from typing import Dict, Optional, Any, List
 _VALID_SESSION_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
+def get_cloudknife_home() -> Path:
+    """
+    Return the CloudKnife home directory (~/.cloudknife/).
+
+    This is the centralized location for all CloudKnife data:
+    - Sessions: ~/.cloudknife/sessions/{cloud}/
+    - Exfiltration: ~/.cloudknife/exfil/{cloud}/{session}/{service}/
+
+    Can be overridden via CLOUDKNIFE_HOME environment variable.
+    """
+    env_override = os.environ.get("CLOUDKNIFE_HOME")
+    if env_override:
+        return Path(env_override).expanduser().resolve()
+    return Path.home() / ".cloudknife"
+
+
 class SessionManager(ABC):
     """
     Abstract base class for cloud session management.
@@ -215,14 +231,14 @@ class SessionManager(ABC):
         """
         Return (and create) the exfil output directory for the current session.
 
-        Structure: exfil/{cloud}/{session_name}/{service}/
-        Example:   exfil/azure/Yuki/mail/
+        Structure: ~/.cloudknife/exfil/{cloud}/{session_name}/{service}/
+        Example:   ~/.cloudknife/exfil/azure/Yuki/mail/
 
         The cloud name is derived from the sessions_dir name (e.g. 'azure', 'aws', 'gcp').
         """
         cloud = self.sessions_dir.name          # e.g. "azure"
         session = self.current_session or "default"
-        exfil_path = self.sessions_dir.parent.parent / "exfil" / cloud / session / service
+        exfil_path = get_cloudknife_home() / "exfil" / cloud / session / service
         exfil_path.mkdir(parents=True, exist_ok=True)
         return exfil_path
 

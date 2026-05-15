@@ -191,10 +191,12 @@ def dynamodb_scan(
             "[cyan]Do you want to save the full Scan result (this page) to a local JSON file?[/cyan]",
             default=False,
         ):
+            exfil_dir = session_mgr.get_exfil_dir("dynamodb")
             default_filename = f"dynamodb_scan_{table_name}.json"
-            filename = Prompt.ask("[cyan]Output filename[/cyan]", default=default_filename).strip()
+            default_path = str(exfil_dir / default_filename)
+            filename = Prompt.ask("[cyan]Output file path[/cyan]", default=default_path).strip()
             if not filename:
-                filename = default_filename
+                filename = default_path
 
             normalized_items = _normalize(items)
             out_obj = {

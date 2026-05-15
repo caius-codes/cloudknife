@@ -288,6 +288,85 @@ set_token
 
 ---
 
+## Data Storage
+
+CloudKnife stores all data in a centralized location in your home directory, independent of where you run the tool:
+
+```
+~/.cloudknife/
+├── sessions/
+│   ├── aws/{session_name}.json
+│   ├── azure/{session_name}.json
+│   └── gcp/{session_name}.json
+└── exfil/
+    ├── aws/{session_name}/{service}/
+    ├── azure/{session_name}/{service}/
+    └── gcp/{session_name}/{service}/
+```
+
+### Session Files
+
+Session files store credentials, configuration, and enumeration results for each named session. Each cloud provider has its own subdirectory:
+
+- **AWS:** `~/.cloudknife/sessions/aws/`
+- **GCP:** `~/.cloudknife/sessions/gcp/`
+- **Azure:** `~/.cloudknife/sessions/azure/`
+
+### Exfiltration Data
+
+All exfiltrated data (secrets, storage objects, database dumps, etc.) is organized by cloud, session, and service:
+
+```
+~/.cloudknife/exfil/
+├── aws/
+│   └── pentest-client/
+│       ├── s3/my-bucket/file.txt
+│       ├── ssm/params_20260515.json
+│       └── dynamodb/scan_users.json
+├── gcp/
+│   └── my-session/
+│       ├── secrets/my-project/database-password.txt
+│       ├── storage/my-bucket/data.csv
+│       └── keys/my-project/sa-key.json
+└── azure/
+    └── target-tenant/
+        ├── keyvault/prod-vault_20260515.json
+        ├── mail/inbox_messages.json
+        └── teams/channel_messages.json
+```
+
+### Custom Base Directory
+
+Override the default `~/.cloudknife/` location via environment variable:
+
+```bash
+# Use a different directory (e.g., for client-specific engagements)
+export CLOUDKNIFE_HOME=/path/to/client-acme/cloudknife
+
+# All data will now be stored in:
+# /path/to/client-acme/cloudknife/sessions/
+# /path/to/client-acme/cloudknife/exfil/
+```
+
+This is useful for:
+- Separating data between different clients/engagements
+- Storing data on encrypted volumes
+- Using project-specific directories
+
+### Output Messages
+
+All CloudKnife commands display absolute paths when saving files:
+
+```
+[green]✓ Secrets exfiltrated![/green]
+Output: /Users/username/.cloudknife/exfil/gcp/my-session/secrets/my-project/
+Summary: /Users/username/.cloudknife/exfil/gcp/my-session/secrets/my-project/_summary.json
+```
+
+This ensures you always know exactly where your data is located.
+
+---
+
 ## Command Reference
 
 ### General (all providers)

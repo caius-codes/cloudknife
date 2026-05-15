@@ -43,6 +43,9 @@ console = Console()
 # OAuth token endpoint
 OAUTH_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
+# IAM Credentials API
+IAM_CREDENTIALS_API = "https://iamcredentials.googleapis.com/v1"
+
 # Default scopes
 DEFAULT_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
@@ -414,6 +417,76 @@ def apply_template(template_id: str) -> Optional[Dict[str, Any]]:
     return config
 
 
+def _sign_jwt_remotely(
+    session_mgr: "GCPSessionManager",
+    target_sa_email: str,
+    claims: Dict[str, Any],
+) -> Optional[str]:
+    """
+    Sign JWT using GCP IAM Credentials API (remote signing).
+
+    This requires iam.serviceAccounts.signJwt permission on the target SA.
+    Useful when you want to generate a JWT for a different SA than the one
+    you're currently authenticated as.
+
+    Args:
+        session_mgr: GCP session manager with valid credentials
+        target_sa_email: Email of the service account to sign as
+        claims: JWT claims/payload to sign
+
+    Returns:
+        Signed JWT string or None on failure
+    """
+    console.print(f"[cyan]Using remote signing via IAM Credentials API for {target_sa_email}[/cyan]")
+
+    # Get access token for current session
+    token = session_mgr.get_access_token()
+    if not token:
+        console.print("[red]Failed to get access token for remote signing[/red]")
+        return None
+
+    # Call signJwt API
+    url = f"{IAM_CREDENTIALS_API}/projects/-/serviceAccounts/{target_sa_email}:signJwt"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    # API expects the payload as a JSON string
+    payload = {
+        "payload": json.dumps(claims),
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+
+        if response.status_code != 200:
+            error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            error_msg = error_data.get("error", {}).get("message", response.text)
+            console.print(f"[red]Remote signing failed: {error_msg}[/red]")
+
+            # Check for common permission errors
+            if "PERMISSION_DENIED" in str(error_data) or response.status_code == 403:
+                console.print(f"[yellow]Missing permission: iam.serviceAccounts.signJwt on {target_sa_email}[/yellow]")
+                console.print("[dim]Run 'enumerate_sa_permissions' to check your permissions[/dim]")
+
+            return None
+
+        result = response.json()
+        signed_jwt = result.get("signedJwt")
+
+        if not signed_jwt:
+            console.print("[red]Remote signing succeeded but no JWT returned[/red]")
+            return None
+
+        console.print("[green]JWT successfully signed remotely[/green]")
+        return signed_jwt
+
+    except requests.exceptions.RequestException as e:
+        console.print(f"[red]Request error during remote signing: {str(e)}[/red]")
+        return None
+
+
 def generate_signed_jwt(
     session_mgr: "GCPSessionManager",
     sa_key_file: Optional[str] = None,
@@ -425,13 +498,22 @@ def generate_signed_jwt(
     subject_email: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Generate a self-signed JWT for service account impersonation.
+    Generate a signed JWT for service account impersonation.
+
+    This function supports TWO signing methods:
+    1. LOCAL SIGNING: Uses the SA's private key to sign locally (offline)
+    2. REMOTE SIGNING: Uses GCP IAM Credentials API to sign server-side
+
+    Remote signing is automatically used when:
+    - The target SA (from custom_claims["iss"]) differs from the current SA
+    - No private key is available for the target SA
+    - Requires: iam.serviceAccounts.signJwt permission on target SA
 
     Args:
         session_mgr: GCP session manager
         sa_key_file: Path to service account JSON key file (if not provided, uses current session)
         claims_file: Path to JSON file containing custom claims to add
-        custom_claims: Dictionary of custom claims to add
+        custom_claims: Dictionary of custom claims to add (can override "iss" to target different SA)
         scopes: OAuth scopes (for OAuth tokens). Ignored if audience is set.
         audience: Target audience (for service-to-service auth). Mutually exclusive with scopes.
         lifetime: Token lifetime in seconds (max 3600 = 1 hour)
@@ -441,11 +523,19 @@ def generate_signed_jwt(
         Signed JWT string or None on failure
 
     Examples:
-        # OAuth token with custom scopes
+        # Local signing: OAuth token with custom scopes
         jwt = generate_signed_jwt(
             session_mgr,
             scopes=["https://www.googleapis.com/auth/drive"],
             lifetime=3600
+        )
+
+        # Remote signing: Generate JWT for a different SA
+        # Requires: deploy@ has signJwt permission on gdrive@
+        jwt = generate_signed_jwt(
+            session_mgr,
+            custom_claims={"iss": "gdrive@production.iam.gserviceaccount.com"},
+            scopes=["https://www.googleapis.com/auth/drive.readonly"]
         )
 
         # Service-to-service auth (Cloud Run)
@@ -460,12 +550,6 @@ def generate_signed_jwt(
             scopes=["https://www.googleapis.com/auth/admin.directory.user"],
             subject_email="admin@example.com"
         )
-
-        # Custom claims from file
-        jwt = generate_signed_jwt(
-            session_mgr,
-            claims_file="/path/to/claims.json"
-        )
     """
     try:
         import jwt as pyjwt
@@ -473,7 +557,20 @@ def generate_signed_jwt(
         console.print("[red]PyJWT library not found. Install with: pip install pyjwt[/red]")
         return None
 
-    # Load service account key
+    # Determine the current SA (the one we're authenticated as)
+    current_sa_email = session_mgr.current_session_data.get("service_account_email")
+
+    # Determine the target SA (the one we want to generate JWT for)
+    # Priority: custom_claims["iss"] > sa_key_file > current session
+    target_sa_email = None
+
+    # Check if custom_claims override the issuer
+    if custom_claims and "iss" in custom_claims:
+        target_sa_email = custom_claims["iss"]
+        console.print(f"[dim]Target SA from custom claims: {target_sa_email}[/dim]")
+
+    # Load service account key (if provided or needed for local signing)
+    sa_key = None
     if sa_key_file:
         key_path = Path(sa_key_file).expanduser().resolve()
         if not key_path.exists():
@@ -482,26 +579,25 @@ def generate_signed_jwt(
 
         with open(key_path, "r") as f:
             sa_key = json.load(f)
+
+        # If target SA not set by custom claims, use the SA from the key file
+        if not target_sa_email:
+            target_sa_email = sa_key.get("client_email")
     else:
-        # Use current session's SA key
+        # Use current session's SA
+        if not target_sa_email:
+            target_sa_email = current_sa_email
+
+        # Try to load SA key from session (for local signing)
         auth_method = session_mgr.current_session_data.get("auth_method")
-        if auth_method != "service_account":
-            console.print("[red]Current session is not using a service account key.[/red]")
-            console.print("[yellow]Use 'set_credentials' first or provide --sa-key-file.[/yellow]")
-            return None
+        if auth_method == "service_account":
+            sa_key_path = session_mgr.current_session_data.get("service_account_file")
+            if sa_key_path and Path(sa_key_path).exists():
+                with open(sa_key_path, "r") as f:
+                    sa_key = json.load(f)
 
-        sa_key_path = session_mgr.current_session_data.get("service_account_file")
-        if not sa_key_path or not Path(sa_key_path).exists():
-            console.print("[red]Service account key file not found in session.[/red]")
-            return None
-
-        with open(sa_key_path, "r") as f:
-            sa_key = json.load(f)
-
-    # Validate SA key structure
-    required_fields = ["private_key", "private_key_id", "client_email"]
-    if not all(field in sa_key for field in required_fields):
-        console.print("[red]Invalid service account key file format.[/red]")
+    if not target_sa_email:
+        console.print("[red]Could not determine target service account email[/red]")
         return None
 
     # Build JWT claims
@@ -510,7 +606,7 @@ def generate_signed_jwt(
 
     # Base claims (required)
     claims = {
-        "iss": sa_key["client_email"],
+        "iss": target_sa_email,
         "iat": now,
         "exp": exp_time,
     }
@@ -519,11 +615,11 @@ def generate_signed_jwt(
     if audience:
         # Service-to-service auth: use custom audience
         claims["aud"] = audience
-        claims["sub"] = sa_key["client_email"]
+        claims["sub"] = target_sa_email
     else:
         # OAuth token: use token endpoint as audience
         claims["aud"] = OAUTH_TOKEN_ENDPOINT
-        claims["sub"] = sa_key["client_email"]
+        claims["sub"] = target_sa_email
 
         # Add scopes
         if scopes is None:
@@ -551,22 +647,66 @@ def generate_signed_jwt(
         console.print(f"[dim]Adding {len(custom_claims)} custom claims[/dim]")
         claims.update(custom_claims)
 
+    # After applying all custom claims, update target_sa_email if iss was overridden
+    # This ensures the JWT is signed by the correct SA (the one declared in iss)
+    final_iss = claims.get("iss")
+    if final_iss and final_iss != target_sa_email:
+        console.print(f"[yellow]Note: 'iss' claim was overridden to {final_iss}[/yellow]")
+        target_sa_email = final_iss
+
     # Display claims
     _display_jwt_claims(claims)
 
-    # Sign JWT
-    try:
-        signed_jwt = pyjwt.encode(
-            claims,
-            sa_key["private_key"],
-            algorithm="RS256",
-            headers={"kid": sa_key["private_key_id"]}
-        )
-    except Exception as e:
-        console.print(f"[red]Failed to sign JWT: {str(e)}[/red]")
-        return None
+    # Determine signing method: remote vs local
+    use_remote_signing = False
 
-    console.print(f"[green]JWT successfully signed ({len(signed_jwt)} bytes)[/green]")
+    # Use remote signing if:
+    # 1. Target SA is different from current SA (cross-SA impersonation)
+    # 2. We don't have the private key for the target SA
+    if target_sa_email != current_sa_email:
+        console.print(f"[yellow]Target SA ({target_sa_email}) differs from current SA ({current_sa_email})[/yellow]")
+        console.print("[cyan]Will attempt remote signing via IAM Credentials API[/cyan]")
+        use_remote_signing = True
+    elif not sa_key or "private_key" not in sa_key:
+        console.print("[yellow]No private key available for local signing[/yellow]")
+        console.print("[cyan]Will attempt remote signing via IAM Credentials API[/cyan]")
+        use_remote_signing = True
+
+    # Sign JWT
+    if use_remote_signing:
+        # Remote signing via IAM Credentials API
+        # Use the final iss claim to determine which SA to sign as
+        signed_jwt = _sign_jwt_remotely(session_mgr, target_sa_email, claims)
+        if not signed_jwt:
+            return None
+    else:
+        # Local signing with PyJWT
+        try:
+            import jwt as pyjwt
+        except ImportError:
+            console.print("[red]PyJWT library not found. Install with: pip install pyjwt[/red]")
+            return None
+
+        # Validate SA key structure for local signing
+        required_fields = ["private_key", "private_key_id"]
+        if not all(field in sa_key for field in required_fields):
+            console.print("[red]Invalid service account key: missing private_key or private_key_id[/red]")
+            return None
+
+        console.print(f"[cyan]Using local signing with private key[/cyan]")
+        try:
+            signed_jwt = pyjwt.encode(
+                claims,
+                sa_key["private_key"],
+                algorithm="RS256",
+                headers={"kid": sa_key["private_key_id"]}
+            )
+        except Exception as e:
+            console.print(f"[red]Failed to sign JWT locally: {str(e)}[/red]")
+            return None
+
+        console.print(f"[green]JWT successfully signed locally ({len(signed_jwt)} bytes)[/green]")
+
     console.print(f"[dim]Valid for {lifetime} seconds (until {datetime.fromtimestamp(exp_time).strftime('%Y-%m-%d %H:%M:%S')})[/dim]")
 
     return signed_jwt

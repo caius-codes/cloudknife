@@ -83,12 +83,14 @@ def exfil_secrets(
 
     # Determine output directory
     if not output_dir:
-        output_dir = str(Path("./exfil/gcp/secrets") / project_id)
+        exfil_dir = session_mgr.get_exfil_dir("secrets")
+        output_dir = str(exfil_dir / project_id)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+    output_dir_abs = str(Path(output_dir).resolve())
 
     console.print(f"[bold]Exfiltrating secrets from project: {project_id}[/bold]")
-    console.print(f"[dim]Output directory: {output_dir}[/dim]")
+    console.print(f"[dim]Output directory: {output_dir_abs}[/dim]")
 
     # Get auth headers
     auth_method = session_mgr.current_session_data.get("auth_method")
@@ -200,8 +202,8 @@ def exfil_secrets(
     console.print(f"\n[bold green]Exfiltration complete![/bold green]")
     console.print(f"  [green]Extracted:[/green] {extracted} version(s)")
     console.print(f"  [red]Failed:[/red] {failed}")
-    console.print(f"  [dim]Output:[/dim] {output_dir}")
-    console.print(f"  [dim]Summary:[/dim] {summary_file}")
+    console.print(f"  [dim]Output:[/dim] {output_dir_abs}")
+    console.print(f"  [dim]Summary:[/dim] {Path(summary_file).resolve()}")
 
     # Save to session
     session_mgr.save_enumeration_data(f"exfil_secrets_{project_id}", summary)
@@ -267,7 +269,7 @@ def _list_secrets_from_endpoint(
                 # Only log for global endpoint
                 if not location:
                     console.print(f"[yellow]⚠️  Failed to list secrets: HTTP {response.status_code}[/yellow]")
-                    console.print(f"[dim]Response: {response.text[:200]}[/dim]")
+                    console.print(f"[dim]Response: {response.text}[/dim]")
                 return []
 
             data = response.json()
@@ -454,36 +456,26 @@ def _display_exfil_results(results: List[Dict[str, Any]]) -> None:
     console.print("\n[bold]Extracted Secrets:[/bold]\n")
 
     table = Table(show_header=True, expand=True)
-    table.add_column("Secret", style="green", no_wrap=False)
+    table.add_column("Secret", style="green", no_wrap=False, overflow="fold")
     table.add_column("Versions", style="cyan", justify="right")
-    table.add_column("Value Preview", no_wrap=False)
+    table.add_column("Value", no_wrap=False, overflow="fold")
 
-    for secret in results[:20]:  # Limit display
+    for secret in results:  # Show ALL secrets, not just first 20
         name = secret["name"]
         versions = secret.get("versions", [])
         version_count = len(versions)
 
-        # Get latest version value preview
+        # Get latest version value (full value, no truncation)
         if versions:
             latest_value = versions[0]["value"]
-            # Truncate for display
-            if len(latest_value) > 60:
-                preview = latest_value[:57] + "..."
-            else:
-                preview = latest_value
-
-            # Mask potential secrets
-            if _looks_like_secret(name, latest_value):
-                preview = f"[yellow]{preview[:20]}...[MASKED][/yellow]"
+            # Display full value without truncation or masking
+            preview = latest_value
         else:
             preview = "-"
 
         table.add_row(name, str(version_count), preview)
 
     console.print(table)
-
-    if len(results) > 20:
-        console.print(f"\n[dim]... and {len(results) - 20} more secrets[/dim]")
 
 
 def _looks_like_secret(name: str, value: str) -> bool:

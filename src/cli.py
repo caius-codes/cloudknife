@@ -89,6 +89,10 @@ def main() -> None:
     # primo avvio: mostra sempre lo switcher
     current_cloud = select_cloud("aws")
 
+    # Import the centralized home directory function
+    from .core.session import get_cloudknife_home
+    cloudknife_home = get_cloudknife_home()
+
     while True:
         cloud = current_cloud  # usa il cloud deciso
 
@@ -96,21 +100,21 @@ def main() -> None:
             # Lazy import: carica solo quando serve
             from .clouds.aws.aws_cli import run_aws_cli
             from .clouds.aws.aws_session import AWSSessionManager
-            session_mgr = AWSSessionManager("sessions/aws")
+            session_mgr = AWSSessionManager(str(cloudknife_home / "sessions" / "aws"))
             result = run_aws_cli(session_mgr)
 
         elif cloud == "azure":
             # Lazy import: carica solo quando serve
             from .clouds.azure.azure_cli import run_azure_cli
             from .clouds.azure.azure_session import AzureSessionManager
-            session_mgr = AzureSessionManager("sessions/azure")
+            session_mgr = AzureSessionManager(str(cloudknife_home / "sessions" / "azure"))
             result = run_azure_cli(session_mgr)
 
         elif cloud == "gcp":
             # Lazy import: carica solo quando serve
             from .clouds.gcp.gcp_cli import run_gcp_cli
             from .clouds.gcp.gcp_session import GCPSessionManager
-            session_mgr = GCPSessionManager("sessions/gcp")
+            session_mgr = GCPSessionManager(str(cloudknife_home / "sessions" / "gcp"))
             result = run_gcp_cli(session_mgr)
 
         else:

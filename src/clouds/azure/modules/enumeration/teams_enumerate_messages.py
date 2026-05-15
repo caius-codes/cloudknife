@@ -360,6 +360,6 @@ def _save_messages(
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(messages, f, indent=2, ensure_ascii=False)
-        console.print(f"[green]Saved {len(messages)} messages to:[/green] {file_path}")
+        console.print(f"[green]Saved {len(messages)} messages to:[/green] {file_path.resolve()}")
     except Exception as e:
         console.print(f"[red]Failed to save messages: {e}[/red]")

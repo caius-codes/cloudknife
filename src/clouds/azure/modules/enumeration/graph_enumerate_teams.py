@@ -321,7 +321,7 @@ def _search_teams_messages(access_token: str, session_mgr: AzureSessionManager) 
         try:
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(all_hits, f, indent=2, ensure_ascii=False)
-            console.print(f"[green]Saved {len(all_hits)} result(s) to:[/green] {file_path}")
+            console.print(f"[green]Saved {len(all_hits)} result(s) to:[/green] {file_path.resolve()}")
         except Exception as e:
             console.print(f"[red]Failed to save: {e}[/red]")
 
@@ -535,7 +535,7 @@ def _download_conversation(
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(full_messages, f, indent=2, ensure_ascii=False)
 
-        console.print(f"[green]Downloaded {len(full_messages)} message(s) with replies to:[/green] {file_path}")
+        console.print(f"[green]Downloaded {len(full_messages)} message(s) with replies to:[/green] {file_path.resolve()}")
 
         # Also save to session data
         session_mgr.save_enumeration_data(

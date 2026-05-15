@@ -71,12 +71,14 @@ def exfil_parameters(
 
     # Determine output directory
     if not output_dir:
-        output_dir = str(Path("./exfil/gcp/parameters") / project_id)
+        exfil_dir = session_mgr.get_exfil_dir("parameters")
+        output_dir = str(exfil_dir / project_id)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+    output_dir_abs = str(Path(output_dir).resolve())
 
     console.print(f"[bold]Exfiltrating parameters from project: {project_id}[/bold]")
-    console.print(f"[dim]Output directory: {output_dir}[/dim]")
+    console.print(f"[dim]Output directory: {output_dir_abs}[/dim]")
 
     # Get auth headers
     auth_method = session_mgr.current_session_data.get("auth_method")
@@ -183,8 +185,8 @@ def exfil_parameters(
     console.print(f"\n[bold green]Exfiltration complete![/bold green]")
     console.print(f"  [green]Extracted:[/green] {extracted} version(s)")
     console.print(f"  [red]Failed:[/red] {failed}")
-    console.print(f"  [dim]Output:[/dim] {output_dir}")
-    console.print(f"  [dim]Summary:[/dim] {summary_file}")
+    console.print(f"  [dim]Output:[/dim] {output_dir_abs}")
+    console.print(f"  [dim]Summary:[/dim] {Path(summary_file).resolve()}")
 
     # Save to session
     session_mgr.save_enumeration_data(f"exfil_parameters_{project_id}", summary)

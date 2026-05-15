@@ -261,7 +261,7 @@ def _export_apps_to_json(apps: List[Dict[str, Any]], prefix: str, session_mgr: A
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(apps, f, indent=2, ensure_ascii=False)
 
-        console.print(f"[green]Exported {len(apps)} app(s) to:[/green] {file_path}")
+        console.print(f"[green]Exported {len(apps)} app(s) to:[/green] {file_path.resolve()}")
 
     except Exception as e:
         console.print(f"[red]Failed to export: {e}[/red]")

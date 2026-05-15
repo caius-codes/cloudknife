@@ -62,7 +62,8 @@ def ssm_bulk_download(
 
     # Set output directory
     if not output_dir:
-        output_dir = "./ssm_downloads"
+        exfil_dir = session_mgr.get_exfil_dir("ssm")
+        output_dir = str(exfil_dir)
 
     # Security warning
     console.print()
@@ -220,7 +221,7 @@ def ssm_bulk_download(
         os.chmod(output_path, 0o600)
 
         console.print()
-        console.print(f"[green]✓ Parameters saved to: {output_path}[/green]")
+        console.print(f"[green]✓ Parameters saved to: {output_path.resolve()}[/green]")
         console.print(f"[dim]File permissions: 0600 (owner read/write only)[/dim]")
 
         # Final security warning

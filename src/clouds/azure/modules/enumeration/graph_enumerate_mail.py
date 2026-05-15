@@ -488,7 +488,7 @@ def _download_search_results(
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(full_messages, f, indent=2, ensure_ascii=False)
-        console.print(f"[green]Saved {len(full_messages)} message(s) to:[/green] {file_path}")
+        console.print(f"[green]Saved {len(full_messages)} message(s) to:[/green] {file_path.resolve()}")
         session_mgr.save_enumeration_data(f"mail_search_{safe_term}_full", full_messages)
     except Exception as e:
         console.print(f"[red]Failed to save: {e}[/red]")
@@ -673,7 +673,7 @@ def _download_full_messages(
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(full_messages, f, indent=2, ensure_ascii=False)
 
-        console.print(f"[green]Downloaded {len(full_messages)} message(s) to:[/green] {file_path}")
+        console.print(f"[green]Downloaded {len(full_messages)} message(s) to:[/green] {file_path.resolve()}")
 
         # Also save to session data
         session_mgr.save_enumeration_data(f"mail_{folder_name.lower().replace(' ', '_')}_full", full_messages)

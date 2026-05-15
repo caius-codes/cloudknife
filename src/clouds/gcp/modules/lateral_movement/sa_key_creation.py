@@ -122,8 +122,10 @@ def create_sa_key(
 
                 # Save the key
                 if not output_dir:
-                    output_dir = str(Path("./exfil/gcp/keys") / project_id)
+                    exfil_dir = session_mgr.get_exfil_dir("keys")
+                    output_dir = str(exfil_dir / project_id)
                 Path(output_dir).mkdir(parents=True, exist_ok=True)
+                output_dir_abs = str(Path(output_dir).resolve())
 
                 # Generate filename
                 sa_name = service_account_email.split("@")[0]
@@ -144,17 +146,18 @@ def create_sa_key(
                 valid_after = result.get("validAfterTime", "")
                 valid_before = result.get("validBeforeTime", "")
 
+                filepath_abs = str(Path(filepath).resolve())
                 console.print(f"\n[bold green]✅ Key created successfully![/bold green]")
                 console.print(f"  [green]Key ID:[/green] {key_id}")
                 console.print(f"  [green]Valid from:[/green] {valid_after}")
                 console.print(f"  [green]Valid until:[/green] {valid_before}")
-                console.print(f"  [green]Saved to:[/green] {filepath}")
+                console.print(f"  [green]Saved to:[/green] {filepath_abs}")
 
                 # Show how to use the key
                 console.print("\n[bold yellow]📋 How to use this key:[/bold yellow]")
-                console.print(f"[dim]  cloudknife gcp set_credentials {filepath}[/dim]")
+                console.print(f"[dim]  cloudknife gcp set_credentials {filepath_abs}[/dim]")
                 console.print(f"[dim]  # Or with gcloud:[/dim]")
-                console.print(f"[dim]  gcloud auth activate-service-account --key-file={filepath}[/dim]")
+                console.print(f"[dim]  gcloud auth activate-service-account --key-file={filepath_abs}[/dim]")
 
                 # Save to session
                 key_result = {

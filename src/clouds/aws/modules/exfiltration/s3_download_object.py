@@ -140,11 +140,13 @@ def s3_download_object(session_mgr: AWSSessionManager, bucket: Optional[str] = N
 
     # Ask for destination
     if not dest:
-        default_name = key.split("/")[-1] or "downloaded_object"
+        exfil_dir = session_mgr.get_exfil_dir("s3")
+        filename = key.split("/")[-1] or "downloaded_object"
         if selected_version_id and selected_version_id != "null":
             # Add version hint to filename
-            default_name = f"{default_name}.v{selected_version_id[:8]}"
-        dest = Prompt.ask("[cyan]Local destination path[/cyan]", default=default_name)
+            filename = f"{filename}.v{selected_version_id[:8]}"
+        default_path = str(exfil_dir / bucket / filename)
+        dest = Prompt.ask("[cyan]Local destination path[/cyan]", default=default_path)
 
     dest_path = Path(dest).expanduser().resolve()
     console.print(

@@ -256,7 +256,7 @@ def _export_policies_to_json(policies: List[Dict[str, Any]], session_mgr: AzureS
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(policies, f, indent=2, ensure_ascii=False)
 
-        console.print(f"[green]Exported {len(policies)} policy/policies to:[/green] {file_path}")
+        console.print(f"[green]Exported {len(policies)} policy/policies to:[/green] {file_path.resolve()}")
 
     except Exception as e:
         console.print(f"[red]Failed to export: {e}[/red]")

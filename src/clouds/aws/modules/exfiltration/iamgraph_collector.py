@@ -47,7 +47,8 @@ def collect_iamgraph_data(session_mgr: AWSSessionManager, output_path: Optional[
 
     # Ask for output path if not provided
     if not output_path:
-        default_path = os.path.join(os.getcwd(), "iam_account_authorization_details.json")
+        exfil_dir = session_mgr.get_exfil_dir("iam")
+        default_path = str(exfil_dir / "iam_account_authorization_details.json")
         output_path = Prompt.ask(
             "[cyan]Output file path[/cyan]",
             default=default_path

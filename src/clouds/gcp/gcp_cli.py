@@ -1244,16 +1244,152 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
 
             elif cmd == "enumerate_exploitable_sas":
                 # Enumerate service accounts and test for exploitable permissions
-                # Usage: enumerate_exploitable_sas [project_id]
+                # Usage: enumerate_exploitable_sas [project_id] [sa_email_or_file]
+                import os
+
                 project_id = args[0] if args else None
-                enumerate_exploitable_sas(session_mgr, project_id)
+                sa_input = args[1] if len(args) > 1 else None
+
+                # If no SA input provided, ask user what they want to do
+                if not sa_input:
+                    # Check if we have cached enumerate_iam data
+                    iam_data = session_mgr.enumerated_data.get(session_mgr.current_session, {}).get("iam_policies")
+                    has_cached_sas = False
+                    if iam_data:
+                        has_cached_sas = bool(iam_data.get("service_accounts") or iam_data.get("project_policies"))
+
+                    console.print("\n[bold blue]🎯 Service Account Discovery Method[/bold blue]\n")
+
+                    options = []
+                    if has_cached_sas:
+                        options.append("Use enumerate_iam cached data (recommended)")
+                    options.extend([
+                        "Provide single SA email",
+                        "Provide file with SA list (one per line)",
+                        "Auto-discover via direct listing"
+                    ])
+
+                    console.print("How would you like to provide service accounts?\n")
+                    for i, opt in enumerate(options, 1):
+                        console.print(f"  {i}. {opt}")
+
+                    choice = Prompt.ask("\n[cyan]Choose option[/cyan]", default="1")
+
+                    try:
+                        choice_num = int(choice)
+                        selected_option = options[choice_num - 1] if 1 <= choice_num <= len(options) else options[0]
+
+                        if "cached data" in selected_option:
+                            # Use cached data - sa_input stays None
+                            console.print("[green]Using cached enumerate_iam data[/green]\n")
+                            sa_input = None
+                        elif "single SA" in selected_option:
+                            sa_email = Prompt.ask("[cyan]Service account email[/cyan]")
+                            sa_input = sa_email if sa_email else None
+                        elif "file with SA list" in selected_option:
+                            file_path = Prompt.ask("[cyan]Path to SA list file[/cyan]")
+                            sa_input = file_path if file_path else None
+                        else:  # Auto-discover
+                            console.print("[green]Using direct listing (requires iam.serviceAccounts.list)[/green]\n")
+                            sa_input = None
+                    except (ValueError, IndexError):
+                        console.print("[yellow]Invalid choice, using default (cached data or auto-discover)[/yellow]\n")
+
+                # Parse SA input (can be single email or file path)
+                sa_list = None
+                if sa_input:
+                    if os.path.isfile(sa_input):
+                        # Read SA list from file (one per line)
+                        console.print(f"[dim]Reading service accounts from file: {sa_input}[/dim]")
+                        try:
+                            with open(sa_input, 'r') as f:
+                                sa_list = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                            console.print(f"[dim]Loaded {len(sa_list)} service accounts from file[/dim]")
+                        except Exception as e:
+                            console.print(f"[red]Error reading file: {e}[/red]")
+                            sa_list = None
+                    else:
+                        # Treat as single SA email
+                        sa_list = [sa_input]
+
+                enumerate_exploitable_sas(session_mgr, project_id, sa_list=sa_list)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_delegation_chains":
                 # Enumerate implicit delegation by testing actual chains
-                # Usage: enumerate_delegation_chains [project_id] [delegate_sa]
+                # Usage: enumerate_delegation_chains [project_id] [delegate_sa_or_file]
+                import os
+
                 project_id = args[0] if args else None
-                delegate_sa = args[1] if len(args) > 1 else None
+                delegate_input = args[1] if len(args) > 1 else None
+
+                # If no delegate input provided, ask user what they want to do
+                if not delegate_input:
+                    # Check if we have cached enumerate_iam data
+                    iam_data = session_mgr.enumerated_data.get(session_mgr.current_session, {}).get("iam_policies")
+                    has_cached_sas = False
+                    if iam_data:
+                        has_cached_sas = bool(iam_data.get("service_accounts") or iam_data.get("project_policies"))
+
+                    console.print("\n[bold blue]🔗 Delegation Chain Testing Method[/bold blue]\n")
+
+                    options = []
+                    if has_cached_sas:
+                        options.append("Test all SAs from enumerate_iam cache as delegates (recommended)")
+                    options.extend([
+                        "Test specific delegate SA (provide email)",
+                        "Test specific delegate SA (provide file - uses first SA)",
+                        "Auto-discover all SAs and test as delegates"
+                    ])
+
+                    console.print("How would you like to test delegation chains?\n")
+                    for i, opt in enumerate(options, 1):
+                        console.print(f"  {i}. {opt}")
+
+                    choice = Prompt.ask("\n[cyan]Choose option[/cyan]", default="1")
+
+                    try:
+                        choice_num = int(choice)
+                        selected_option = options[choice_num - 1] if 1 <= choice_num <= len(options) else options[0]
+
+                        if "enumerate_iam cache" in selected_option or "Auto-discover" in selected_option:
+                            # Use cached data or auto-discover - delegate_input stays None (tests all SAs)
+                            if "cache" in selected_option:
+                                console.print("[green]Using cached enumerate_iam data[/green]\n")
+                            else:
+                                console.print("[green]Will auto-discover all SAs and test each as delegate[/green]\n")
+                            delegate_input = None
+                        elif "provide email" in selected_option:
+                            sa_email = Prompt.ask("[cyan]Delegate service account email[/cyan]")
+                            delegate_input = sa_email if sa_email else None
+                        elif "provide file" in selected_option:
+                            file_path = Prompt.ask("[cyan]Path to SA file (first SA will be used)[/cyan]")
+                            delegate_input = file_path if file_path else None
+                    except (ValueError, IndexError):
+                        console.print("[yellow]Invalid choice, using default (test all SAs)[/yellow]\n")
+
+                # Parse delegate input (can be single email or file path)
+                delegate_sa = None
+                if delegate_input:
+                    if os.path.isfile(delegate_input):
+                        # For now, delegation chains only supports single delegate
+                        # Read first SA from file as delegate
+                        console.print(f"[dim]Reading delegate SA from file: {delegate_input}[/dim]")
+                        try:
+                            with open(delegate_input, 'r') as f:
+                                lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                                if lines:
+                                    delegate_sa = lines[0]
+                                    console.print(f"[dim]Using first SA from file as delegate: {delegate_sa}[/dim]")
+                                    if len(lines) > 1:
+                                        console.print(f"[dim yellow]Note: Only first SA from file will be used as delegate[/dim yellow]")
+                        except Exception as e:
+                            console.print(f"[red]Error reading file: {e}[/red]")
+                            delegate_sa = None
+                    else:
+                        # Treat as single SA email
+                        delegate_sa = delegate_input
+
                 enumerate_delegation_chains(session_mgr, project_id, delegate_sa)
                 _log_command(session_mgr, cmd)
 

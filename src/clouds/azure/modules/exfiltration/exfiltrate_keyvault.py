@@ -133,7 +133,7 @@ def exfiltrate_keyvault(session_mgr: AzureSessionManager) -> None:
             )
         console.print(ktable)
 
-    console.print(f"[green]Saved to: {out_file}[/green]")
+    console.print(f"[green]Saved to: {out_file.resolve()}[/green]")
     console.print(
         f"[green]Exfiltrated {len(secrets)} secret(s)"
         + (f" and {len(keys)} key(s)" if keys else "")

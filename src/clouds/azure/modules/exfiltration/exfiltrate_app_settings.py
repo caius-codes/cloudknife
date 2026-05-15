@@ -147,7 +147,7 @@ def exfiltrate_app_settings(session_mgr: AzureSessionManager, app_name: str = No
     }
 
     out_file.write_text(json.dumps(exfil_data, indent=2))
-    console.print(f"[green]Saved to: {out_file}[/green]")
+    console.print(f"[green]Saved to: {out_file.resolve()}[/green]")
 
     # Also save to session enumeration data
     session_mgr.save_enumeration_data(f"app_settings_{app_name}", exfil_data)

@@ -67,13 +67,14 @@ def clone_source_repository(
 
     # Determine output directory
     if not output_dir:
-        base_dir = Path("./exfil/gcp/source-repos")
-        output_dir = str(base_dir / project_id / repo_name)
+        exfil_dir = session_mgr.get_exfil_dir("source-repos")
+        output_dir = str(exfil_dir / project_id / repo_name)
 
     # Create output directory
     output_path = Path(output_dir)
+    output_dir_abs = str(output_path.resolve())
     if output_path.exists():
-        console.print(f"[yellow]Directory {output_dir} already exists. Clone may fail if not empty.[/yellow]")
+        console.print(f"[yellow]Directory {output_dir_abs} already exists. Clone may fail if not empty.[/yellow]")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -161,7 +162,7 @@ def clone_source_repository(
         )
 
         if result.returncode == 0:
-            console.print(f"[green]✓ Repository cloned successfully to {output_dir}[/green]")
+            console.print(f"[green]✓ Repository cloned successfully to {output_dir_abs}[/green]")
 
             # Remove credentials from git config for security
             try:

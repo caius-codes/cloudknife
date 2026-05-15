@@ -61,8 +61,9 @@ def download_object(
 
     # Determine output path
     if not output_path:
-        # Create default output directory structure
-        base_dir = Path("./exfil/gcp") / bucket_name
+        # Create default output directory structure using centralized exfil dir
+        exfil_dir = session_mgr.get_exfil_dir("storage")
+        base_dir = exfil_dir / bucket_name
         # Preserve object path structure
         output_path = str(base_dir / object_name)
 
@@ -84,7 +85,8 @@ def download_object(
 
         if success:
             file_size = os.path.getsize(output_path)
-            console.print(f"[green]Downloaded:[/green] {output_path} ({_format_size(file_size)})")
+            output_path_abs = str(Path(output_path).resolve())
+            console.print(f"[green]Downloaded:[/green] {output_path_abs} ({_format_size(file_size)})")
             return output_path
         else:
             return None
