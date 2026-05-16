@@ -105,6 +105,7 @@ from .modules.persistence import (
 )
 
 from ...logging import get_command_logger
+from .search import search_modules as search_aws_modules
 
 logger = get_command_logger()
 
@@ -239,6 +240,7 @@ def build_completer(session_mgr: AWSSessionManager) -> WordCompleter:
     sessions = [s["name"] for s in session_mgr.list_sessions()]
     commands = [
         "help",
+        "search",
         "set_keys",
         "set_sso_profile",
         "set_sso_interactive",
@@ -406,6 +408,11 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
 
             if cmd in ("help", "?"):
                 print_help()
+
+            elif cmd == "search":
+                query = " ".join(args) if args else None
+                search_aws_modules(session_mgr, query)
+                _log_command(session_mgr, cmd)
 
             elif cmd == "set_keys":
                 set_keys(session_mgr)

@@ -93,6 +93,7 @@ from .azure_ui import (
 )
 
 from ...logging import get_command_logger
+from .search import search_modules as search_azure_modules
 
 console = Console()
 logger = get_command_logger()
@@ -140,6 +141,7 @@ def build_completer(session_mgr: AzureSessionManager) -> WordCompleter:
         "delete_session",
         "exit",
         "help",
+        "search",
         "list_sessions",
         "new_session",
         "quit",
@@ -374,6 +376,12 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
 
             if cmd in ("help", "?"):
                 print_help()
+                continue
+
+            if cmd == "search":
+                query = " ".join(args) if args else None
+                search_azure_modules(session_mgr, query)
+                _log_command(session_mgr, cmd)
                 continue
 
             # Alias: "mfa" is shorthand for "audit_mfa_gaps"

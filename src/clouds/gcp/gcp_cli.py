@@ -104,6 +104,7 @@ from .modules.lateral_movement import (
 )
 
 from ...logging import get_command_logger
+from .search import search_modules as search_gcp_modules
 
 console = Console()
 logger = get_command_logger()
@@ -155,7 +156,7 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
     # Rebuild completer
     commands = [
         # General
-        "help", "?", "exit", "quit",
+        "help", "?", "search", "exit", "quit",
         "cloud", "cloud aws", "cloud azure", "cloud gcp",
         # Session/credential management
         "set_credentials", "set_adc", "set_token", "set_token_file",
@@ -629,6 +630,12 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
             # Help
             if cmd in ("help", "?"):
                 print_help()
+
+            # Search
+            elif cmd == "search":
+                query = " ".join(args) if args else None
+                search_gcp_modules(session_mgr, query)
+                _log_command(session_mgr, cmd)
 
             # ---------- Credential management ----------
 

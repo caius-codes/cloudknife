@@ -89,6 +89,7 @@ def print_help():
     all_data = [
         # General
         ("help / ?", "Show this help"),
+        ("search <keyword>", "Search modules by keyword"),
         ("clear_sessions", "Delete all saved sessions from disk"),
         (r"cloud \[aws | gcp | azure]", "Change cloud"),
         ("delete_session [name]", "Delete a session"),

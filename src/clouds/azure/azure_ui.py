@@ -93,6 +93,7 @@ def print_help():
         ("get_teams_token", "Get Teams API token via username/password (ROPC flow, like AADInternals)"),
         # General
         ("help / ?", "Show this help"),
+        ("search <keyword>", "Search modules by keyword"),
         ("clear_sessions", "Delete all saved sessions from disk"),
         (r"cloud \[aws | gcp | azure]", "Change cloud"),
         ("delete_session [name]", "Delete an Azure session"),
