@@ -425,14 +425,14 @@ def _sanitize_value_preview(value: str) -> str:
     return value
 
 
-def show_metadata_detail(
+def describe_metadata_detail(
     session_mgr: "GCPSessionManager",
     project: str = None,
     instance: str = None,
     key: str = None
 ) -> None:
     """
-    Show detailed metadata value (use with caution - may contain sensitive data).
+    Describe detailed metadata value (use with caution - may contain sensitive data).
 
     Args:
         session_mgr: GCP session manager

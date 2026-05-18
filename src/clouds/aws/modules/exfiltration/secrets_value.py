@@ -20,9 +20,9 @@ def _load_secrets_cache(session_mgr: AWSSessionManager) -> List[Dict[str, Any]]:
     )
 
 
-def secret_value(session_mgr: AWSSessionManager, secret_id: Optional[str] = None) -> None:
+def exfiltrate_secret(session_mgr: AWSSessionManager, secret_id: Optional[str] = None) -> None:
     """
-    Retrieve and show the value of a specific secret (Name or ARN).
+    Exfiltrate and show the value of a specific secret (Name or ARN).
     Uses cache to infer region when possible; otherwise asks.
     """
     if not session_mgr.current_session_data.get("access_key"):

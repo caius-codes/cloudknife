@@ -105,9 +105,9 @@ def print_help():
         ("whoami", "Show current AWS identity and bruteforce summary"),
         ("exit / quit", "Exit Cloud Knife"),
         # Enumeration
-        ("analyze_privesc [quick|deep] [CRITICAL|HIGH|MEDIUM]", "Analyze IAM privilege escalation paths (quick: fast scan | deep: comprehensive analysis) - filter by severity (requires bruteforce_permissions first)"),
-        ("bruteforce_permissions [services] [mode]", "Bruteforce IAM permissions across services (fast: 46 perms/12 svc | full: 148 perms/22 svc | low: 130 perms/24 svc)"),
-        ("dynamodb_table_details [TableName]", "Show detailed metadata and DescribeTable JSON for a DynamoDB table"),
+        ("analyze_privesc [quick|deep] [CRITICAL|HIGH|MEDIUM]", "Analyze IAM privilege escalation paths (quick: fast scan | deep: comprehensive analysis) - filter by severity (requires enumerate_bruteforce_permissions first)"),
+        ("enumerate_bruteforce_permissions [services] [mode]", "Bruteforce IAM permissions across services (fast: 46 perms/12 svc | full: 148 perms/22 svc | low: 130 perms/24 svc)"),
+        ("describe_dynamodb_table [TableName]", "Show detailed metadata and DescribeTable JSON for a DynamoDB table"),
         ("enumerate_action_query <query> [--all-or-none] [--role <role>] [--user <user>]", "Query which principals have specific IAM permissions (auto-enumerates policies)"),
         ("enumerate_dynamodb", "List DynamoDB tables (keys, encryption, PITR, streams) across regions"),
         ("enumerate_ebs_snapshots", "List EBS snapshots across regions and flag encryption"),
@@ -133,24 +133,24 @@ def print_help():
         ("enumerate_users", "List all IAM users (paginated)"),
         ("enumerate_oidc_providers", "List all OpenID Connect identity providers with details (issuer URLs, thumbprints, client IDs)"),
         ("enumerate_vulnerable_oidc [provider]", "Scan for vulnerable GitHub OIDC trust policies (missing/bypassable subject validation)"),
-        ("lambda_details [FunctionName] [--region eu-west-1]", "Show detailed configuration & env vars for a Lambda"),
+        ("describe_lambda_function [FunctionName] [--region eu-west-1]", "Show detailed configuration & env vars for a Lambda"),
         ("quick_enum", "Lightweight overview: counts for EC2, Lambda, DynamoDB, ECR, Secrets, MQ"),
-        ("show_ec2_userdata [InstanceId]", "Show cached userData for a specific EC2 instance"),
-        ("show_escalation_paths", "Display previously analyzed privilege escalation paths from session"),
-        ("show_policy_document", "View IAM policy document (managed or inline)"),
+        ("describe_ec2_userdata [InstanceId]", "Show cached userData for a specific EC2 instance"),
+        ("analyze_privilege_escalation_paths", "Display previously analyzed privilege escalation paths from session"),
+        ("describe_policy_document", "View IAM policy document (managed or inline)"),
         # Exfiltration
-        ("collect_iamgraph_data [output_path]", "Export complete IAM account authorization details for IAMGraph visualization"),
+        ("download_iamgraph_data [output_path]", "Export complete IAM account authorization details for IAMGraph visualization"),
         ("download_ebs_snapshot [SnapshotId] [out_dir]", "Download an EBS snapshot as a local disk image using dsnap"),
-        ("dynamodb_scan [TableName] [limit]", "Scan a DynamoDB table and exfiltrate a limited set of items"),
-        ("ec2_get_password [InstanceId] [key.pem] [--region]", "Retrieve and decrypt Windows EC2 Administrator password using private key"),
-        ("s3_download_bucket [bucket] [prefix] [dest]", "Recursively download a bucket/prefix to local dir"),
-        ("rds_iam_token [host] [port] [user] [region]", "Generate IAM auth token for RDS (15-min passwordless access)"),
-        ("rds_iam_tokens_bulk", "Generate IAM tokens for all IAM-auth-enabled DBs (requires enumerate_rds first)"),
-        ("ecr_get_login [registry_id] [--region r]", "Get ECR auth token + ready-to-use docker/podman login commands"),
-        ("s3_download_object [bucket] [key] [dest]", "Download a single S3 object to local disk"),
-        ("secret_value [Name/ARN]", "Retrieve and display a specific secret value"),
-        ("ssm_bulk_download [path] [region] [output_dir]", "Bulk download SSM parameters recursively under a path to JSON file"),
-        ("ssm_parameter_value [name] [region]", "Retrieve single SSM parameter value (auto-decrypts SecureString)"),
+        ("exfiltrate_dynamodb_table [TableName] [limit]", "Scan a DynamoDB table and exfiltrate a limited set of items"),
+        ("exfiltrate_ec2_password [InstanceId] [key.pem] [--region]", "Retrieve and decrypt Windows EC2 Administrator password using private key"),
+        ("download_s3_bucket [bucket] [prefix] [dest]", "Recursively download a bucket/prefix to local dir"),
+        ("generate_rds_token [host] [port] [user] [region]", "Generate IAM auth token for RDS (15-min passwordless access)"),
+        ("generate_rds_tokens_bulk", "Generate IAM tokens for all IAM-auth-enabled DBs (requires enumerate_rds first)"),
+        ("get_ecr_credentials [registry_id] [--region r]", "Get ECR auth token + ready-to-use docker/podman login commands"),
+        ("download_s3_object [bucket] [key] [dest]", "Download a single S3 object to local disk"),
+        ("exfiltrate_secret [Name/ARN]", "Retrieve and display a specific secret value"),
+        ("exfiltrate_ssm_parameters [path] [region] [output_dir]", "Bulk download SSM parameters recursively under a path to JSON file"),
+        ("exfiltrate_ssm_parameter [name] [region]", "Retrieve single SSM parameter value (auto-decrypts SecureString)"),
         # Lateral movement
         ("assume_role_session [RoleArn] [NewSessionName]", "Assume an IAM role via STS and create a new Cloud Knife session"),
         # Exploitation
@@ -159,7 +159,7 @@ def print_help():
         ("ssm_start_session [InstanceId]", "Open an interactive SSM Session Manager shell (session-manager-plugin required)"),
         # Persistence
         ("create_access_key [username]", "Create a new access key for persistence (uses current user if not specified)"),
-        ("list_access_keys [username]", "List all access keys for a user (uses current user if not specified)"),
+        ("enumerate_access_keys [username]", "List all access keys for a user (uses current user if not specified)"),
         ("delete_access_key", "Delete an access key for cleanup/revocation"),
         # Miscellaneous
         ("aws ...", "Run AWS CLI in shell (pipe | jq supported)"),
@@ -201,17 +201,24 @@ def print_help():
         table2.add_column("Description", width=max_desc_width)
         table2.add_row(
             "analyze_privesc [quick|deep] [CRITICAL|HIGH|MEDIUM]",
-            "Analyze IAM privilege escalation paths (quick: fast scan | deep: comprehensive analysis) - filter by severity (requires bruteforce_permissions first)",
+            "Analyze IAM privilege escalation paths (quick: fast scan | deep: comprehensive analysis) - filter by severity (requires enumerate_bruteforce_permissions first)",
         )
         table2.add_row(
-            "bruteforce_permissions [services] [mode]",
-            "Bruteforce IAM permissions across services (fast: 46 perms/12 svc | full: 148 perms/22 svc | low: 130 perms/24 svc)",
+            "analyze_privilege_escalation_paths",
+            "Display previously analyzed privilege escalation paths from session",
         )
         table2.add_row(
-            "dynamodb_table_details [TableName]",
+            "describe_dynamodb_table [TableName]",
             "Show detailed metadata and DescribeTable JSON for a DynamoDB table",
         )
+        table2.add_row("describe_ec2_userdata [InstanceId]", "Show cached userData for a specific EC2 instance")
+        table2.add_row("describe_lambda_function [FunctionName] [--region eu-west-1]", "Show detailed configuration & env vars for a Lambda")
+        table2.add_row("describe_policy_document", "View IAM policy document (managed or inline)")
         table2.add_row("enumerate_action_query <query> [--all-or-none] [--role <role>] [--user <user>]", "Query which principals have specific IAM permissions (auto-enumerates policies)")
+        table2.add_row(
+            "enumerate_bruteforce_permissions [services] [mode]",
+            "Bruteforce IAM permissions across services (fast: 46 perms/12 svc | full: 148 perms/22 svc | low: 130 perms/24 svc)",
+        )
         table2.add_row(
             "enumerate_dynamodb",
             "List DynamoDB tables (keys, encryption, PITR, streams) across regions",
@@ -254,14 +261,10 @@ def print_help():
         table2.add_row("enumerate_ssm", "List SSM Parameter Store parameters across regions (flags SecureString)")
         table2.add_row("enumerate_users", "List all IAM users (paginated)")
         table2.add_row("enumerate_vulnerable_oidc [provider]", "Scan for vulnerable GitHub OIDC trust policies (missing/bypassable subject validation)")
-        table2.add_row("lambda_details [FunctionName] [--region eu-west-1]", "Show detailed configuration & env vars for a Lambda")
         table2.add_row(
             "quick_enum",
             "Lightweight overview: counts for EC2, Lambda, DynamoDB, ECR, Secrets, MQ",
         )
-        table2.add_row("show_ec2_userdata [InstanceId]", "Show cached userData for a specific EC2 instance")
-        table2.add_row("show_escalation_paths", "Display previously analyzed privilege escalation paths from session")
-        table2.add_row("show_policy_document", "View IAM policy document (managed or inline)")
 
 
 
@@ -274,38 +277,38 @@ def print_help():
         table3.add_column("Command", style="bold", width=max_cmd_width)
         table3.add_column("Description", width=max_desc_width)
         table3.add_row(
-            "collect_iamgraph_data [output_path]",
-            "Export complete IAM account authorization details for IAMGraph visualization",
-        )
-        table3.add_row(
             "download_ebs_snapshot [SnapshotId] [out_dir]",
             "Download an EBS snapshot as a local disk image using dsnap",
         )
         table3.add_row(
-            "dynamodb_scan [TableName] [limit]",
+            "download_iamgraph_data [output_path]",
+            "Export complete IAM account authorization details for IAMGraph visualization",
+        )
+        table3.add_row(
+            "download_s3_bucket [bucket] [prefix] [dest]",
+            "Recursively download a bucket/prefix to local dir",
+        )
+        table3.add_row("download_s3_object [bucket] [key] [dest]", "Download a single S3 object to local disk")
+        table3.add_row(
+            "exfiltrate_dynamodb_table [TableName] [limit]",
             "Scan a DynamoDB table and exfiltrate a limited set of items",
         )
         table3.add_row(
-            "ec2_get_password [InstanceId] [key.pem] [--region]",
+            "exfiltrate_ec2_password [InstanceId] [key.pem] [--region]",
             "Retrieve and decrypt Windows EC2 Administrator password using private key",
         )
-        table3.add_row("ecr_get_login [registry_id] [--region r]", "Get ECR auth token + ready-to-use docker/podman login commands")
+        table3.add_row("exfiltrate_secret [Name/ARN]", "Retrieve and display a specific secret value")
+        table3.add_row("exfiltrate_ssm_parameter [name] [region]", "Retrieve single SSM parameter value (auto-decrypts SecureString)")
+        table3.add_row("exfiltrate_ssm_parameters [path] [region] [output_dir]", "Bulk download SSM parameters recursively under a path to JSON file")
         table3.add_row(
-            "rds_iam_token [host] [port] [user] [region]",
+            "generate_rds_token [host] [port] [user] [region]",
             "Generate IAM auth token for RDS (15-min passwordless access)",
         )
         table3.add_row(
-            "rds_iam_tokens_bulk",
+            "generate_rds_tokens_bulk",
             "Generate IAM tokens for all IAM-auth-enabled DBs (requires enumerate_rds first)",
         )
-        table3.add_row(
-            "s3_download_bucket [bucket] [prefix] [dest]",
-            "Recursively download a bucket/prefix to local dir",
-        )
-        table3.add_row("s3_download_object [bucket] [key] [dest]", "Download a single S3 object to local disk")
-        table3.add_row("secret_value [Name/ARN]", "Retrieve and display a specific secret value")
-        table3.add_row("ssm_bulk_download [path] [region] [output_dir]", "Bulk download SSM parameters recursively under a path to JSON file")
-        table3.add_row("ssm_parameter_value [name] [region]", "Retrieve single SSM parameter value (auto-decrypts SecureString)")
+        table3.add_row("get_ecr_credentials [registry_id] [--region r]", "Get ECR auth token + ready-to-use docker/podman login commands")
 
         console.print(table3)
 
@@ -354,7 +357,7 @@ def print_help():
             "Delete an access key for cleanup/revocation",
         )
         table6.add_row(
-            "list_access_keys [username]",
+            "enumerate_access_keys [username]",
             "List all access keys for a user (uses current user if not specified)",
         )
         console.print(table6)

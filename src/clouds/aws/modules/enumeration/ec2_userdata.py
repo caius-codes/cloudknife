@@ -19,9 +19,9 @@ def _load_ec2_cache(session_mgr: AWSSessionManager) -> List[Dict[str, Any]]:
     )
 
 
-def show_ec2_userdata(session_mgr: AWSSessionManager, instance_id: Optional[str] = None) -> None:
+def describe_ec2_userdata(session_mgr: AWSSessionManager, instance_id: Optional[str] = None) -> None:
     """
-    Show userData for a given InstanceId from cached 'ec2_instances' enumeration.
+    Describe userData for a given InstanceId from cached 'ec2_instances' enumeration.
     If no instance_id provided, offers to dump all instances with userdata.
     """
     if not session_mgr.current_session_data.get("access_key"):

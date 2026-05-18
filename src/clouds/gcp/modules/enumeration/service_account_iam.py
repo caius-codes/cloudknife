@@ -22,12 +22,12 @@ if TYPE_CHECKING:
 console = Console()
 
 
-def get_service_account_iam_policy(
+def describe_service_account_iam_policy(
     session_mgr: "GCPSessionManager",
     service_account_email: str = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Get the IAM policy for a service account.
+    Describe the IAM policy for a service account.
 
     This shows who has permissions ON the service account itself,
     such as iam.serviceAccountUser (can impersonate) or

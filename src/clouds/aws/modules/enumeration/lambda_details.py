@@ -24,13 +24,13 @@ def _find_cached_lambda(session_mgr: AWSSessionManager, function_name: str) -> O
     return None
 
 
-def show_lambda_details(
+def describe_lambda_function(
     session_mgr: AWSSessionManager,
     function_name: Optional[str] = None,
     region: Optional[str] = None,
 ) -> None:
     """
-    Show detailed information for a specific Lambda function:
+    Describe detailed information for a specific Lambda function:
     - GetFunction (Configuration + Code + Environment)
     - Uses cache from 'lambda_functions' when available for quick metadata.
 

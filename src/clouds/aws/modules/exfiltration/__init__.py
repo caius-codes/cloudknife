@@ -1,27 +1,27 @@
 # Exfiltration modules - alphabetically sorted
-from .dynamodb_scan import dynamodb_scan
+from .dynamodb_scan import exfiltrate_dynamodb_table
 from .ebs_download_snapshots import download_ebs_snapshot
-from .ec2_get_password import ec2_get_password
-from .ecr_credentials import ecr_get_login
-from .iamgraph_collector import collect_iamgraph_data
-from .rds_iam_token import generate_rds_iam_token, generate_rds_iam_tokens_bulk
-from .s3_download_bucket import s3_download_bucket
-from .s3_download_object import s3_download_object
-from .secrets_value import secret_value
-from .ssm_bulk_download import ssm_bulk_download
-from .ssm_parameter_value import get_ssm_parameter_value
+from .ec2_get_password import exfiltrate_ec2_password
+from .ecr_credentials import get_ecr_credentials
+from .iamgraph_collector import download_iamgraph_data
+from .rds_iam_token import generate_rds_token, generate_rds_tokens_bulk
+from .s3_download_bucket import download_s3_bucket
+from .s3_download_object import download_s3_object
+from .secrets_value import exfiltrate_secret
+from .ssm_bulk_download import exfiltrate_ssm_parameters
+from .ssm_parameter_value import exfiltrate_ssm_parameter
 
 __all__ = [
-    "collect_iamgraph_data",
     "download_ebs_snapshot",
-    "dynamodb_scan",
-    "ec2_get_password",
-    "ecr_get_login",
-    "generate_rds_iam_token",
-    "generate_rds_iam_tokens_bulk",
-    "get_ssm_parameter_value",
-    "s3_download_bucket",
-    "s3_download_object",
-    "secret_value",
-    "ssm_bulk_download",
+    "download_iamgraph_data",
+    "download_s3_bucket",
+    "download_s3_object",
+    "exfiltrate_dynamodb_table",
+    "exfiltrate_ec2_password",
+    "exfiltrate_secret",
+    "exfiltrate_ssm_parameter",
+    "exfiltrate_ssm_parameters",
+    "generate_rds_token",
+    "generate_rds_tokens_bulk",
+    "get_ecr_credentials",
 ]

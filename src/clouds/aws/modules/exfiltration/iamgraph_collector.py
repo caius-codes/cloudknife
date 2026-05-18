@@ -19,9 +19,9 @@ from ...aws_session import AWSSessionManager
 console = Console()
 
 
-def collect_iamgraph_data(session_mgr: AWSSessionManager, output_path: Optional[str] = None) -> None:
+def download_iamgraph_data(session_mgr: AWSSessionManager, output_path: Optional[str] = None) -> None:
     """
-    Collect IAM account authorization details and save to JSON file for IAMGraph.
+    Download IAM account authorization details and save to JSON file for IAMGraph.
 
     This exports:
     - All IAM users and their policies

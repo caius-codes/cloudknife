@@ -29,13 +29,13 @@ def _load_ssm_cache(session_mgr: AWSSessionManager) -> List[Dict[str, Any]]:
     )
 
 
-def get_ssm_parameter_value(
+def exfiltrate_ssm_parameter(
     session_mgr: AWSSessionManager,
     parameter_name: Optional[str] = None,
     region: Optional[str] = None
 ) -> None:
     """
-    Retrieve and display the value of a specific SSM parameter.
+    Exfiltrate and display the value of a specific SSM parameter.
     Uses cache to infer region when possible; otherwise prompts user.
 
     Args:

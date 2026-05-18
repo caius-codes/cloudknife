@@ -35,7 +35,7 @@ def _normalize(obj: Any) -> Any:
     return str(obj)
 
 
-def dynamodb_scan(
+def exfiltrate_dynamodb_table(
     session_mgr: AWSSessionManager,
     table_name: Optional[str] = None,
     limit_arg: Optional[str] = None,
@@ -44,13 +44,13 @@ def dynamodb_scan(
     Exfiltrate items from a DynamoDB table using Scan.
 
     Usage:
-      dynamodb_scan
+      exfiltrate_dynamodb_table
         -> chiede TableName e usa limit default (100).
 
-      dynamodb_scan analytics_app_users
+      exfiltrate_dynamodb_table analytics_app_users
         -> scan della tabella con limit 100.
 
-      dynamodb_scan analytics_app_users 500
+      exfiltrate_dynamodb_table analytics_app_users 500
         -> scan con limit 500 (hard cap 1000).
 
     Note:

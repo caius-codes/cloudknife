@@ -31,14 +31,14 @@ console = Console()
 PARAM_API_BASE = "https://parametermanager.googleapis.com/v1"
 
 
-def exfil_parameters(
+def exfiltrate_parameters(
     session_mgr: "GCPSessionManager",
     project_id: Optional[str] = None,
     output_dir: Optional[str] = None,
     include_disabled: bool = False,
 ) -> Dict[str, Any]:
     """
-    Extract all parameter values from Parameter Manager.
+    Exfiltrate all parameter values from Parameter Manager.
 
     Args:
         session_mgr: GCP session manager with valid credentials
@@ -439,7 +439,7 @@ def _looks_like_secret(name: str, value: str) -> bool:
     return False
 
 
-def exfil_single_parameter(
+def exfiltrate_parameter(
     session_mgr: "GCPSessionManager",
     parameter_name: str,
     project_id: Optional[str] = None,
@@ -447,7 +447,7 @@ def exfil_single_parameter(
     version: str = "latest",
 ) -> Optional[str]:
     """
-    Extract a single parameter value.
+    Exfiltrate a single parameter value.
 
     Args:
         session_mgr: GCP session manager with valid credentials

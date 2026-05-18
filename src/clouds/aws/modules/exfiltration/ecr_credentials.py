@@ -12,13 +12,13 @@ from ...aws_session import AWSSessionManager
 console = Console()
 
 
-def ecr_get_login(
+def get_ecr_credentials(
     session_mgr: AWSSessionManager,
     registry_id: Optional[str] = None,
     region: Optional[str] = None,
 ) -> None:
     """
-    Retrieve ECR authorization token (ecr:GetAuthorizationToken).
+    Get ECR authorization token (ecr:GetAuthorizationToken).
 
     Decodes the base64 token to extract username (AWS) and password, then
     prints ready-to-use docker and podman login commands.

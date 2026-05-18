@@ -8,7 +8,7 @@ from ...aws_session import AWSSessionManager
 console = Console()
 
 
-def s3_download_bucket(session_mgr: AWSSessionManager, bucket: Optional[str] = None,
+def download_s3_bucket(session_mgr: AWSSessionManager, bucket: Optional[str] = None,
                        prefix: Optional[str] = None, dest_dir: Optional[str] = None,
                        include_versions: bool = False):
     """

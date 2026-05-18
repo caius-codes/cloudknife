@@ -928,7 +928,7 @@ def _normalize_services_arg(services_arg: Optional[str], available_services: Lis
     return valid
 
 
-def bruteforce_permissions(
+def enumerate_bruteforce_permissions(
     session_mgr: AWSSessionManager,
     services_arg: Optional[str] = None,
     mode: str = "fast",
@@ -941,7 +941,7 @@ def bruteforce_permissions(
       - "full": enumerazione completa high priority (FULL_ACTIONS)
       - "low": servizi lower priority per enumerazione estesa (LOW_ACTIONS)
 
-    - Supports service filtering: bruteforce_permissions ec2,s3,iam [mode]
+    - Supports service filtering: enumerate_bruteforce_permissions ec2,s3,iam [mode]
     - Stores results under 'iam_bruteforce' in session data.
     """
     if not session_mgr.current_session_data.get("access_key"):

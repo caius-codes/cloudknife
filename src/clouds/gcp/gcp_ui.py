@@ -132,13 +132,21 @@ def print_help():
         ("use_session [name]", "Switch to an existing session"),
         ("whoami", "Show current GCP identity"),
         ("exit / quit", "Exit Cloud Knife"),
-        # Enumeration
-        ("bruteforce_permissions [svc] [mode]", "Test IAM permissions via testIamPermissions API (fast: 109 perms/7 svc | full: 246 perms/18 svc | low: 112 perms/22 svc)"),
+        # Enumeration (alphabetically sorted)
+        ("analyze_privilege_escalation_paths", "Analyze privilege escalation paths from bruteforce results"),
+        ("describe_cloud_build [build_id] [project]", "Describe Cloud Build with logs (may contain API keys, passwords, credentials in build output)"),
+        ("describe_cloud_run_service [name] [project] [region]", "Describe Cloud Run service with detailed env vars (highlights sensitive data: API keys, passwords)"),
+        ("describe_drive_file <file_id>", "Show detailed permissions for a Google Drive file"),
         ("describe_instance [name] [project] [zone]", "Describe instance with metadata/startup scripts (highlights sensitive data: passwords, keys)"),
+        ("describe_metadata_detail [instance] [key]", "Describe full metadata value for an instance or project"),
         ("describe_role [role] [project]", "Describe an IAM role and its permissions (highlights dangerous ones)"),
-        ("enumerate_artifacts [project]", "List Artifact Registry repositories (Docker, Maven, NPM, etc.) across projects"),
+        ("describe_service_account_iam_policy [sa_email]", "Describe who can impersonate a service account (IAM bindings)"),
         ("enumerate_artifact_packages", "List packages within Artifact Registry repositories"),
         ("enumerate_artifact_versions", "List versions and tags for packages in Artifact Registry"),
+        ("enumerate_artifacts [project]", "List Artifact Registry repositories (Docker, Maven, NPM, etc.) across projects"),
+        ("enumerate_bruteforce_permissions [svc] [mode]", "Enumerate IAM permissions via testIamPermissions API (fast: 109 perms/7 svc | full: 246 perms/18 svc | low: 112 perms/22 svc)"),
+        ("enumerate_build_history [max]", "List recent Cloud Build history (status, source, service accounts)"),
+        ("enumerate_build_triggers", "List Cloud Build triggers (repo connections, substitutions, secrets, service accounts)"),
         ("enumerate_compute", "List Compute Engine VMs (IPs, service accounts, status) across projects/zones"),
         ("enumerate_compute_metadata", "Enumerate instance & project metadata (detects sensitive data: passwords, keys, scripts)"),
         ("enumerate_delegation_chains [proj] [sa|file]", "Discover implicitDelegation by testing actual chains (sa: email or file path with SA list)"),
@@ -148,26 +156,16 @@ def print_help():
         ("enumerate_iam", "Enumerate IAM policies, service accounts, and keys across projects"),
         ("enumerate_objects <bucket> [prefix]", "List all objects in a specific bucket (with optional prefix filter)"),
         ("enumerate_parameters [project]", "List Parameter Manager parameters and versions in a project"),
+        ("enumerate_predefined_roles [filter]", "Enumerate predefined GCP roles (filter by name pattern)"),
         ("enumerate_resource_permissions [type] [name]", "Discover permissions on a specific resource (bucket, function, SA, etc.)"),
         ("enumerate_run_services", "List Cloud Run services (URLs, env vars, public/private, service accounts)"),
-        ("describe_cloud_run_service [name] [project] [region]", "Describe Cloud Run service with detailed env vars (highlights sensitive data: API keys, passwords)"),
-        ("enumerate_build_triggers", "List Cloud Build triggers (repo connections, substitutions, secrets, service accounts)"),
-        ("enumerate_build_history [max]", "List recent Cloud Build history (status, source, service accounts)"),
-        ("describe_cloud_build [build_id] [project]", "Describe Cloud Build with logs (may contain API keys, passwords, credentials in build output)"),
-        ("enumerate_sql", "List Cloud SQL instances (MySQL, PostgreSQL, SQL Server) with databases, users, and security settings"),
         ("enumerate_secrets [project]", "List Secret Manager secrets and versions in a project"),
+        ("enumerate_shared_files [public]", "Enumerate shared Google Drive files (use 'public' to show only publicly accessible files)"),
         ("enumerate_source_repos", "List Google Source Repositories (code repos) with IAM policies and mirror configs across projects"),
+        ("enumerate_sql", "List Cloud SQL instances (MySQL, PostgreSQL, SQL Server) with databases, users, and security settings"),
         ("enumerate_storage", "List Cloud Storage buckets (public access, IAM, encryption) across projects"),
-        ("search_drive [keyword1] [keyword2] ...", "Search Google Drive for files with sensitive keywords (default: password, secret, key, token)"),
-        ("list_shared_drive [public]", "List shared Google Drive files (use 'public' to show only publicly accessible files)"),
-        ("describe_drive_file <file_id>", "Show detailed permissions for a Google Drive file"),
-        ("download_drive_file <file_id> [dir] [name]", "Download a single Google Drive file (exports Google Docs/Sheets as PDF)"),
-        ("download_drive_files [dir] [workers]", "Download all files from enumeration results (batch download with parallel workers)"),
-        ("list_roles [filter]", "List predefined GCP roles (filter by name pattern)"),
-        ("privesc_paths", "Analyze privilege escalation paths from bruteforce results"),
         ("quick_enum", "Quick overview of key GCP services (Compute, Functions, Run, Storage, Secrets, IAM) - Fast!"),
-        ("show_metadata_detail [instance] [key]", "Display full metadata value for an instance or project"),
-        ("who_can_impersonate [sa_email]", "Show who can impersonate a service account (IAM bindings)"),
+        ("search_drive [keyword1] [keyword2] ...", "Search Google Drive for files with sensitive keywords (default: password, secret, key, token)"),
         # Lateral Movement
         ("create_sa_key [sa_email]", "Create a persistent key for a service account"),
         ("delete_sa_key [sa_email] [key_id]", "Delete a service account key"),
@@ -186,16 +184,18 @@ def print_help():
         ("show_jwt_templates", "Show available JWT templates for common scenarios (Drive, Workspace, etc.)"),
         ("generate_jwt [--template id] [options]", "Generate self-signed JWT with custom claims"),
         ("exchange_jwt <jwt_token>", "Exchange JWT for OAuth access token"),
-        # Exfiltration
+        # Exfiltration (alphabetically sorted)
         ("clone_all_source_repos [project] [output_dir]", "Clone all Source Repositories from a project (uses session credentials including impersonation)"),
         ("clone_source_repo [repo] [project] [output_dir]", "Clone a single Source Repository (useful when only specific SAs have access)"),
         ("download_artifact", "Download artifacts from Artifact Registry (Docker images, packages, etc.)"),
+        ("download_drive_file <file_id> [dir] [name]", "Download a single Google Drive file (exports Google Docs/Sheets as PDF)"),
+        ("download_drive_files [dir] [workers]", "Download all files from enumeration results (batch download with parallel workers)"),
         ("download_object <bucket> <object>", "Download a single object from a bucket"),
-        ("exfil_bucket <bucket> [prefix]", "Download all objects from a bucket (with size/count limits)"),
-        ("exfil_parameter <name> [project] [loc]", "Extract a single parameter value"),
-        ("exfil_parameters [project]", "Extract all Parameter Manager values (auto base64 decode)"),
-        ("exfil_secret <name> [project] [version] [location]", "Extract a single secret value (location for regional secrets)"),
-        ("exfil_secrets [project]", "Extract all Secret Manager values (auto base64 decode)"),
+        ("download_bucket <bucket> [prefix]", "Download all objects from a bucket (with size/count limits)"),
+        ("exfiltrate_parameter <name> [project] [loc]", "Extract a single parameter value"),
+        ("exfiltrate_parameters [project]", "Extract all Parameter Manager values (auto base64 decode)"),
+        ("exfiltrate_secret <name> [project] [version] [location]", "Extract a single secret value (location for regional secrets)"),
+        ("exfiltrate_secrets [project]", "Extract all Secret Manager values (auto base64 decode)"),
         # Miscellaneous
         ("gcloud ...", "Run gcloud CLI with session credentials (pipe | jq supported)"),
         ("gsutil ...", "Run gsutil CLI with session credentials (pipe | jq supported)"),
@@ -240,8 +240,8 @@ def print_help():
         table2.add_column("Command", style="bold", width=max_cmd_width)
         table2.add_column("Description", width=max_desc_width)
         table2.add_row(
-            "bruteforce_permissions [svc] [mode]",
-            "Test IAM permissions via testIamPermissions API (fast: 109 perms/7 svc | full: 246 perms/18 svc | low: 112 perms/22 svc)",
+            "analyze_privilege_escalation_paths",
+            "Analyze privilege escalation paths from bruteforce results",
         )
         table2.add_row(
             "describe_cloud_build [build_id] [project]",
@@ -260,16 +260,16 @@ def print_help():
             "Describe instance with metadata/startup scripts (highlights sensitive data: passwords, keys)",
         )
         table2.add_row(
+            "describe_metadata_detail [instance] [key]",
+            "Describe full metadata value for an instance or project",
+        )
+        table2.add_row(
             "describe_role [role] [project]",
             "Describe an IAM role and its permissions (highlights dangerous ones)",
         )
         table2.add_row(
-            "download_drive_file <file_id> [dir] [name]",
-            "Download a single Google Drive file (exports Google Docs/Sheets as PDF)",
-        )
-        table2.add_row(
-            "download_drive_files [dir] [workers]",
-            "Download all files from enumeration results (batch download with parallel workers)",
+            "describe_service_account_iam_policy [sa_email]",
+            "Describe who can impersonate a service account (IAM bindings)",
         )
         table2.add_row(
             "enumerate_artifact_packages",
@@ -282,6 +282,10 @@ def print_help():
         table2.add_row(
             "enumerate_artifacts [project]",
             "List Artifact Registry repositories (Docker, Maven, NPM, etc.) across projects",
+        )
+        table2.add_row(
+            "enumerate_bruteforce_permissions [svc] [mode]",
+            "Enumerate IAM permissions via testIamPermissions API (fast: 109 perms/7 svc | full: 246 perms/18 svc | low: 112 perms/22 svc)",
         )
         table2.add_row(
             "enumerate_build_history [max]",
@@ -328,6 +332,10 @@ def print_help():
             "List Parameter Manager parameters and versions in a project",
         )
         table2.add_row(
+            "enumerate_predefined_roles [filter]",
+            "Enumerate predefined GCP roles (filter by name pattern)",
+        )
+        table2.add_row(
             "enumerate_resource_permissions [type] [name]",
             "Discover permissions on a specific resource (bucket, function, SA, etc.)",
         )
@@ -340,6 +348,14 @@ def print_help():
             "List Secret Manager secrets and versions in a project",
         )
         table2.add_row(
+            "enumerate_shared_files [public]",
+            "Enumerate shared Google Drive files (use 'public' to show only publicly accessible files)",
+        )
+        table2.add_row(
+            "enumerate_source_repos",
+            "List Google Source Repositories (code repos) with IAM policies and mirror configs across projects",
+        )
+        table2.add_row(
             "enumerate_sql",
             "List Cloud SQL instances (MySQL, PostgreSQL, SQL Server) with databases, users, and security settings",
         )
@@ -348,32 +364,12 @@ def print_help():
             "List Cloud Storage buckets (public access, IAM, encryption) across projects",
         )
         table2.add_row(
-            "list_roles [filter]",
-            "List predefined GCP roles (filter by name pattern)",
-        )
-        table2.add_row(
-            "list_shared_drive [public]",
-            "List shared Google Drive files (use 'public' to show only publicly accessible files)",
-        )
-        table2.add_row(
-            "privesc_paths",
-            "Analyze privilege escalation paths from bruteforce results",
-        )
-        table2.add_row(
             "quick_enum",
             "Quick overview of key GCP services (Compute, Functions, Run, Storage, Secrets, IAM) - Fast!",
         )
         table2.add_row(
             "search_drive [keyword1] [keyword2] ...",
             "Search Google Drive for files with sensitive keywords (default: password, secret, key, token)",
-        )
-        table2.add_row(
-            "show_metadata_detail [instance] [key]",
-            "Display full metadata value for an instance or project",
-        )
-        table2.add_row(
-            "who_can_impersonate [sa_email]",
-            "Show who can impersonate a service account (IAM bindings)",
         )
         console.print(table2)
 
@@ -464,27 +460,35 @@ def print_help():
             "Download artifacts from Artifact Registry (Docker images, packages, etc.)",
         )
         table4.add_row(
+            "download_drive_file <file_id> [dir] [name]",
+            "Download a single Google Drive file (exports Google Docs/Sheets as PDF)",
+        )
+        table4.add_row(
+            "download_drive_files [dir] [workers]",
+            "Download all files from enumeration results (batch download with parallel workers)",
+        )
+        table4.add_row(
             "download_object <bucket> <object>",
             "Download a single object from a bucket",
         )
         table4.add_row(
-            "exfil_bucket <bucket> [prefix]",
+            "download_bucket <bucket> [prefix]",
             "Download all objects from a bucket (with size/count limits)",
         )
         table4.add_row(
-            "exfil_parameter <name> [project] [loc]",
+            "exfiltrate_parameter <name> [project] [loc]",
             "Extract a single parameter value",
         )
         table4.add_row(
-            "exfil_parameters [project]",
+            "exfiltrate_parameters [project]",
             "Extract all Parameter Manager values (auto base64 decode)",
         )
         table4.add_row(
-            "exfil_secret <name> [project] [version] [location]",
+            "exfiltrate_secret <name> [project] [version] [location]",
             "Extract a single secret value (location for regional secrets)",
         )
         table4.add_row(
-            "exfil_secrets [project]",
+            "exfiltrate_secrets [project]",
             "Extract all Secret Manager values (auto base64 decode)",
         )
         console.print(table4)

@@ -28,7 +28,7 @@ def _topic_name_from_arn(arn: str) -> str:
     return m.group(1) if m else arn
 
 
-def sns_enum(session_mgr: AWSSessionManager, max_topics: int = 100, verbose: bool = False) -> None:
+def enumerate_sns(session_mgr: AWSSessionManager, max_topics: int = 100, verbose: bool = False) -> None:
     """
     Enumerate Amazon SNS topics and subscriptions.
 

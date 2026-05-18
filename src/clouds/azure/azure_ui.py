@@ -135,8 +135,8 @@ def print_help():
         ("enumerate_external_users", "Enumerate external/guest users by mail prefix (e.g. 'ext.') + all guests — uses Graph ConsistencyLevel: eventual"),
         ("enumerate_webapps", "Enumerate Web Apps in the subscription (SDK with CLI fallback)"),
         # Microsoft Graph Operations
-        ("bruteforce_graph_permissions [fast|full]", "Test Graph API permissions via HTTP calls with false positive detection (fast: ~31 perms | full: ~90 perms) - write ops returning 404 marked UNCERTAIN"),
-        ("bruteforce_aad_permissions [fast|full]", "⚠️  LEGACY: Enumerate Azure AD Graph API permissions (graph.windows.net - deprecated)"),
+        ("enumerate_bruteforce_graph_permissions [fast|full]", "Test Graph API permissions via HTTP calls with false positive detection (fast: ~31 perms | full: ~90 perms) - write ops returning 404 marked UNCERTAIN"),
+        ("enumerate_bruteforce_aad_permissions [fast|full]", "⚠️  LEGACY: Enumerate Azure AD Graph API permissions (graph.windows.net - deprecated)"),
         ("enumerate_users_legacy", "⚠️  LEGACY: Enumerate users via Azure AD Graph API (graph.windows.net)"),
         ("enumerate_groups_legacy", "⚠️  LEGACY: Enumerate groups via Azure AD Graph API (graph.windows.net)"),
         ("enumerate_apps_legacy", "⚠️  LEGACY: Enumerate apps/service principals via Azure AD Graph API (graph.windows.net)"),
@@ -247,8 +247,8 @@ def print_help():
         table_graph = Table(title="[cyan]Microsoft Graph Operations[/cyan]", show_header=False, box=None, padding=(0, 1), title_justify="center")
         table_graph.add_column("Command", style="bold", width=max_cmd_width)
         table_graph.add_column("Description", width=max_desc_width)
-        table_graph.add_row("bruteforce_aad_permissions [fast|full]", "⚠️  LEGACY: Enumerate Azure AD Graph API permissions (graph.windows.net - deprecated)")
-        table_graph.add_row("bruteforce_graph_permissions [fast|full]", "Test Graph API permissions via HTTP calls with false positive detection (fast: ~31 perms | full: ~90 perms) - write ops returning 404 marked UNCERTAIN")
+        table_graph.add_row("enumerate_bruteforce_aad_permissions [fast|full]", "⚠️  LEGACY: Enumerate Azure AD Graph API permissions (graph.windows.net - deprecated)")
+        table_graph.add_row("enumerate_bruteforce_graph_permissions [fast|full]", "Test Graph API permissions via HTTP calls with false positive detection (fast: ~31 perms | full: ~90 perms) - write ops returning 404 marked UNCERTAIN")
         table_graph.add_row("enumerate_apps_legacy", "⚠️  LEGACY: Enumerate apps/service principals via Azure AD Graph API (graph.windows.net)")
         table_graph.add_row("enumerate_groups_legacy", "⚠️  LEGACY: Enumerate groups via Azure AD Graph API (graph.windows.net)")
         table_graph.add_row("enumerate_users_legacy", "⚠️  LEGACY: Enumerate users via Azure AD Graph API (graph.windows.net)")

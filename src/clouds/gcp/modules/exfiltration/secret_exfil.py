@@ -43,14 +43,14 @@ GCP_REGIONS = [
 ]
 
 
-def exfil_secrets(
+def exfiltrate_secrets(
     session_mgr: "GCPSessionManager",
     project_id: Optional[str] = None,
     output_dir: Optional[str] = None,
     include_disabled: bool = False,
 ) -> Dict[str, Any]:
     """
-    Extract all secret values from Secret Manager.
+    Exfiltrate all secret values from Secret Manager.
 
     Args:
         session_mgr: GCP session manager with valid credentials
@@ -497,7 +497,7 @@ def _looks_like_secret(name: str, value: str) -> bool:
     return False
 
 
-def exfil_single_secret(
+def exfiltrate_secret(
     session_mgr: "GCPSessionManager",
     secret_name: str,
     project_id: Optional[str] = None,
@@ -505,7 +505,7 @@ def exfil_single_secret(
     location: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Extract a single secret value.
+    Exfiltrate a single secret value.
 
     Args:
         session_mgr: GCP session manager with valid credentials

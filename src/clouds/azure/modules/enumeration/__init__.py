@@ -1,5 +1,5 @@
 # Enumeration modules - alphabetically sorted
-from .aad_graph_legacy_bruteforce import bruteforce_aad_permissions
+from .aad_graph_legacy_bruteforce import enumerate_bruteforce_aad_permissions
 from .enum_administrative_unit_members import enumerate_administrative_unit_members
 from .enum_administrative_unit_scoped_members import enumerate_administrative_unit_scoped_members
 from .enum_administrative_units import enumerate_administrative_units
@@ -37,21 +37,21 @@ from .graph_enumerate_files import enumerate_files
 from .graph_enumerate_mail import enumerate_mail
 from .graph_enumerate_sharepoint import enumerate_sharepoint
 from .graph_enumerate_teams import enumerate_teams
-from .graph_permissions_bruteforce import bruteforce_graph_permissions
+from .graph_permissions_bruteforce import enumerate_bruteforce_graph_permissions
 from .quick_enum import quick_enum
 from .teams_enumerate_messages import enumerate_teams_messages
-from .token_exchange_discovery import discover_accessible_services
+from .token_exchange_discovery import enumerate_accessible_services
 
 __all__ = [
-    "bruteforce_aad_permissions",
-    "bruteforce_graph_permissions",
-    "discover_accessible_services",
+    "enumerate_accessible_services",
     "enumerate_administrative_unit_members",
     "enumerate_administrative_unit_scoped_members",
     "enumerate_administrative_units",
     "enumerate_all_role_assignments",
     "enumerate_apps",
     "enumerate_apps_legacy",
+    "enumerate_bruteforce_aad_permissions",
+    "enumerate_bruteforce_graph_permissions",
     "enumerate_ca_policies",
     "enumerate_container_apps",
     "enumerate_container_apps_full",

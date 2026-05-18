@@ -37,22 +37,22 @@ from .modules import (
 
 from .modules.enumeration import (
     enumerate_users,
-    bruteforce_permissions,
+    enumerate_bruteforce_permissions,
     analyze_privilege_escalation,
-    show_privilege_escalation_paths,
+    analyze_privilege_escalation_paths,
     enumerate_policies_interactive,
     enumerate_inline_user_policies,
     enumerate_inline_role_policies,
     enumerate_attached_user_policies,
     enumerate_attached_role_policies,
-    show_policy_document,
+    describe_policy_document,
     enumerate_action_query,
     enumerate_vulnerable_oidc,
     enumerate_oidc_providers,
     enumerate_ec2,
-    show_ec2_userdata,
+    describe_ec2_userdata,
     enumerate_lambda,
-    show_lambda_details,
+    describe_lambda_function,
     enumerate_secrets,
     enumerate_ssm_parameters,
     enumerate_s3_buckets,
@@ -61,11 +61,11 @@ from .modules.enumeration import (
     enumerate_ebs_snapshots,
     enumerate_groups,
     enumerate_dynamodb_tables,
-    dynamodb_table_details,
+    describe_dynamodb_table,
     enumerate_ecr_repositories,
     enumerate_mq_brokers,
     quick_enum,
-    sns_enum,
+    enumerate_sns,
     enumerate_iam_users_unauth_interactive,
     enumerate_rds_instances,
     enumerate_rds_snapshots,
@@ -76,18 +76,18 @@ from .modules.enumeration import (
 )
 
 from .modules.exfiltration import (
-    s3_download_object,
-    s3_download_bucket,
+    download_s3_object,
+    download_s3_bucket,
     download_ebs_snapshot,
-    dynamodb_scan,
-    ec2_get_password,
-    secret_value,
-    get_ssm_parameter_value,
-    ssm_bulk_download,
-    collect_iamgraph_data,
-    generate_rds_iam_token,
-    generate_rds_iam_tokens_bulk,
-    ecr_get_login,
+    exfiltrate_dynamodb_table,
+    exfiltrate_ec2_password,
+    exfiltrate_secret,
+    exfiltrate_ssm_parameter,
+    exfiltrate_ssm_parameters,
+    download_iamgraph_data,
+    generate_rds_token,
+    generate_rds_tokens_bulk,
+    get_ecr_credentials,
 )
 
 from .modules.lateral import assume_role_new_session
@@ -101,7 +101,7 @@ from .modules.exploitation import (
 from .modules.persistence import (
     create_access_key_interactive,
     delete_access_key_interactive,
-    list_access_keys_interactive,
+    enumerate_access_keys,
 )
 
 from ...logging import get_command_logger
@@ -263,35 +263,35 @@ def build_completer(session_mgr: AWSSessionManager) -> WordCompleter:
         "enumerate_ec2",
         "enumerate_mq",
         "enumerate_sns",
-        "show_ec2_userdata",
+        "describe_ec2_userdata",
         "enumerate_lambda",
-        "lambda_details",
+        "describe_lambda_function",
         "enumerate_secrets",
-        "secret_value",
+        "exfiltrate_secret",
         "enumerate_ssm",
-        "ssm_parameter_value",
-        "ssm_bulk_download",
-        "collect_iamgraph_data",
-        "show_policy_document",
+        "exfiltrate_ssm_parameter",
+        "exfiltrate_ssm_parameters",
+        "download_iamgraph_data",
+        "describe_policy_document",
         "enumerate_s3_buckets",
         "enumerate_s3_objects",
-        "s3_download_object",
-        "s3_download_bucket",
-        "bruteforce_permissions",
+        "download_s3_object",
+        "download_s3_bucket",
+        "enumerate_bruteforce_permissions",
         "analyze_privesc",
-        "show_escalation_paths",
+        "analyze_privilege_escalation_paths",
         "assume_role_session",
         "enumerate_ebs_snapshots",
         "download_ebs_snapshot",
-        "ec2_get_password",
+        "exfiltrate_ec2_password",
         "ssm_rce_ec2",
         "ssm_start_session",
         "create_access_key",
         "delete_access_key",
-        "list_access_keys",
+        "enumerate_access_keys",
         "enumerate_dynamodb",
-        "dynamodb_table_details",
-        "dynamodb_scan",
+        "describe_dynamodb_table",
+        "exfiltrate_dynamodb_table",
         "enumerate_ecr",
         "clear_sessions",
         "quick_enum",
@@ -299,12 +299,12 @@ def build_completer(session_mgr: AWSSessionManager) -> WordCompleter:
         "enumerate_rds",
         "enumerate_rds_snapshots",
         "enumerate_rds_public_snapshots",
-        "rds_iam_token",
-        "rds_iam_tokens_bulk",
+        "generate_rds_token",
+        "generate_rds_tokens_bulk",
         "enumerate_groundstation",
         "enumerate_elasticbeanstalk",
         "enumerate_launch_templates",
-        "ecr_get_login",
+        "get_ecr_credentials",
         "aws",
         "cloud",
         "exit",
@@ -549,9 +549,9 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 enumerate_iam_users_unauth_interactive(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "show_policy_document":
+            elif cmd == "describe_policy_document":
                 arn = args[0] if args else None
-                show_policy_document(session_mgr, arn)
+                describe_policy_document(session_mgr, arn)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_ec2":
@@ -559,7 +559,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_sns":
-                result = sns_enum(
+                result = enumerate_sns(
                     session_mgr,
                     max_topics=getattr(args, "max_topics", 100),
                     verbose=getattr(args, "verbose", False),
@@ -579,18 +579,18 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 enumerate_dynamodb_tables(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "dynamodb_table_details":
+            elif cmd == "describe_dynamodb_table":
                 tname = args[0] if args else None
-                dynamodb_table_details(session_mgr, tname)
+                describe_dynamodb_table(session_mgr, tname)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "dynamodb_scan":
+            elif cmd == "exfiltrate_dynamodb_table":
                 tname = args[0] if len(args) > 0 else None
                 limit = args[1] if len(args) > 1 else None
-                dynamodb_scan(session_mgr, tname, limit)
+                exfiltrate_dynamodb_table(session_mgr, tname, limit)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "ec2_get_password":
+            elif cmd == "exfiltrate_ec2_password":
                 inst_id = args[0] if len(args) > 0 else None
                 key_path = args[1] if len(args) > 1 else None
                 region = None
@@ -599,7 +599,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                     if arg == "--region" and i + 1 < len(args):
                         region = args[i + 1]
                         break
-                ec2_get_password(session_mgr, inst_id, key_path, region)
+                exfiltrate_ec2_password(session_mgr, inst_id, key_path, region)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "ssm_rce_ec2":
@@ -621,15 +621,15 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 delete_access_key_interactive(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "list_access_keys":
-                list_access_keys_interactive(session_mgr)
+            elif cmd == "enumerate_access_keys":
+                enumerate_access_keys(session_mgr)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_lambda":
                 enumerate_lambda(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "lambda_details":
+            elif cmd == "describe_lambda_function":
                 fn_name = None
                 region = None
                 skip_next = False
@@ -642,47 +642,47 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                         skip_next = True
                     elif not arg.startswith("--"):
                         fn_name = arg
-                show_lambda_details(session_mgr, fn_name, region)
+                describe_lambda_function(session_mgr, fn_name, region)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "quick_enum":
                 quick_enum(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "show_ec2_userdata":
+            elif cmd == "describe_ec2_userdata":
                 inst_id = args[0] if args else None
-                show_ec2_userdata(session_mgr, inst_id)
+                describe_ec2_userdata(session_mgr, inst_id)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_secrets":
                 enumerate_secrets(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "secret_value":
+            elif cmd == "exfiltrate_secret":
                 sec_id = args[0] if args else None
-                secret_value(session_mgr, sec_id)
+                exfiltrate_secret(session_mgr, sec_id)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_ssm":
                 enumerate_ssm_parameters(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "ssm_parameter_value":
+            elif cmd == "exfiltrate_ssm_parameter":
                 param_name = args[0] if len(args) > 0 else None
                 region = args[1] if len(args) > 1 else None
-                get_ssm_parameter_value(session_mgr, param_name, region)
+                exfiltrate_ssm_parameter(session_mgr, param_name, region)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "ssm_bulk_download":
+            elif cmd == "exfiltrate_ssm_parameters":
                 path_filter = args[0] if len(args) > 0 else None
                 region = args[1] if len(args) > 1 else None
                 output_dir = args[2] if len(args) > 2 else None
-                ssm_bulk_download(session_mgr, path_filter, region, output_dir)
+                exfiltrate_ssm_parameters(session_mgr, path_filter, region, output_dir)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "collect_iamgraph_data":
+            elif cmd == "download_iamgraph_data":
                 output_path = args[0] if args else None
-                collect_iamgraph_data(session_mgr, output_path)
+                download_iamgraph_data(session_mgr, output_path)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "assume_role_session":
@@ -699,7 +699,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 ec2_startup_shell(session_mgr, args)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "bruteforce_permissions":
+            elif cmd == "enumerate_bruteforce_permissions":
                 services_arg = None
                 mode = "fast"
                 if len(args) == 1:
@@ -712,7 +712,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 elif len(args) >= 2:
                     services_arg = args[0]
                     mode = args[1]
-                bruteforce_permissions(session_mgr, services_arg, mode)
+                enumerate_bruteforce_permissions(session_mgr, services_arg, mode)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "analyze_privesc":
@@ -726,7 +726,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 _log_command(session_mgr, cmd)
 
             elif cmd == "show_escalation_paths":
-                show_privilege_escalation_paths(session_mgr)
+                analyze_privilege_escalation_paths(session_mgr)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_s3_buckets":
@@ -739,18 +739,18 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 enumerate_s3_objects(session_mgr, bucket, prefix)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "s3_download_object":
+            elif cmd == "download_s3_object":
                 bucket = args[0] if len(args) > 0 else None
                 key = args[1] if len(args) > 1 else None
                 dest = args[2] if len(args) > 2 else None
-                s3_download_object(session_mgr, bucket, key, dest)
+                download_s3_object(session_mgr, bucket, key, dest)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "s3_download_bucket":
+            elif cmd == "download_s3_bucket":
                 bucket = args[0] if len(args) > 0 else None
                 prefix = args[1] if len(args) > 1 else None
                 dest = args[2] if len(args) > 2 else None
-                s3_download_bucket(session_mgr, bucket, prefix, dest)
+                download_s3_bucket(session_mgr, bucket, prefix, dest)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "download_ebs_snapshot":
@@ -778,16 +778,16 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 enumerate_rds_public_snapshots_interactive(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "rds_iam_token":
+            elif cmd == "generate_rds_token":
                 host = args[0] if len(args) > 0 else None
                 port = int(args[1]) if len(args) > 1 else None
                 user = args[2] if len(args) > 2 else None
                 region = args[3] if len(args) > 3 else None
-                generate_rds_iam_token(session_mgr, host, port, user, region)
+                generate_rds_token(session_mgr, host, port, user, region)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "rds_iam_tokens_bulk":
-                generate_rds_iam_tokens_bulk(session_mgr)
+            elif cmd == "generate_rds_tokens_bulk":
+                generate_rds_tokens_bulk(session_mgr)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_groundstation":
@@ -802,7 +802,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 enumerate_launch_templates(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "ecr_get_login":
+            elif cmd == "get_ecr_credentials":
                 reg_id = None
                 region = None
                 skip_next = False
@@ -815,7 +815,7 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                         skip_next = True
                     elif not arg.startswith("--"):
                         reg_id = arg
-                ecr_get_login(session_mgr, reg_id, region)
+                get_ecr_credentials(session_mgr, reg_id, region)
                 _log_command(session_mgr, cmd)
 
             elif cmd in ("exit", "quit"):

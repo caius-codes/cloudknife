@@ -22,14 +22,14 @@ from ...aws_session import AWSSessionManager
 console = Console()
 
 
-def ssm_bulk_download(
+def exfiltrate_ssm_parameters(
     session_mgr: AWSSessionManager,
     path_filter: Optional[str] = None,
     region: Optional[str] = None,
     output_dir: Optional[str] = None
 ) -> None:
     """
-    Bulk download SSM parameters under a specified path (recursive).
+    Bulk exfiltrate SSM parameters under a specified path (recursive).
 
     Args:
         session_mgr: AWS session manager instance

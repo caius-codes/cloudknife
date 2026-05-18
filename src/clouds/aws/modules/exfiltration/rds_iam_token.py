@@ -32,7 +32,7 @@ from src.clouds.aws.utils.regions import RegionalClientFactory
 console = Console()
 
 
-def generate_rds_iam_token(
+def generate_rds_token(
     session_mgr: AWSSessionManager,
     db_host: Optional[str] = None,
     db_port: Optional[int] = None,
@@ -139,7 +139,7 @@ def generate_rds_iam_token(
         return None
 
 
-def generate_rds_iam_tokens_bulk(session_mgr: AWSSessionManager) -> None:
+def generate_rds_tokens_bulk(session_mgr: AWSSessionManager) -> None:
     """
     Generate IAM tokens for all IAM-auth-enabled databases found in session data.
     Requires running enumerate_rds_instances first.

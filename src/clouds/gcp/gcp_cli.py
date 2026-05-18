@@ -30,15 +30,15 @@ from .modules.enumeration import (
     enumerate_compute_instances,
     describe_instance,
     enumerate_compute_metadata,
-    show_metadata_detail,
+    describe_metadata_detail,
     enumerate_storage_buckets,
     enumerate_bucket_objects,
     enumerate_iam_policies,
-    get_service_account_iam_policy,
+    describe_service_account_iam_policy,
     describe_role,
-    list_predefined_roles,
-    bruteforce_permissions,
-    show_privilege_escalation_paths,
+    enumerate_predefined_roles,
+    enumerate_bruteforce_permissions,
+    analyze_privilege_escalation_paths,
     enumerate_cloud_functions,
     enumerate_cloud_run_services,
     describe_cloud_run_service,
@@ -58,10 +58,7 @@ from .modules.enumeration import (
     quick_enum,
     enumerate_drive_files,
     search_drive_files,
-    list_shared_files,
     describe_file_permissions,
-    download_file,
-    download_files_batch,
 )
 
 from .modules.exfiltration import (
@@ -69,10 +66,13 @@ from .modules.exfiltration import (
     clone_source_repository,
     download_object,
     download_all_objects,
-    exfil_parameters,
-    exfil_single_parameter,
-    exfil_secrets,
-    exfil_single_secret,
+    download_file,
+    download_files_batch,
+    enumerate_shared_files,
+    exfiltrate_parameters,
+    exfiltrate_parameter,
+    exfiltrate_secrets,
+    exfiltrate_secret,
     download_artifact,
 )
 
@@ -167,7 +167,7 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
         "whoami", "discover_projects",
         # Enumeration
         "quick_enum",
-        "enumerate_compute", "describe_instance", "enumerate_compute_metadata", "show_metadata_detail",
+        "enumerate_compute", "describe_instance", "enumerate_compute_metadata", "describe_metadata_detail",
         "enumerate_storage", "enumerate_iam", "enumerate_sql",
         "enumerate_functions", "enumerate_run_services", "describe_cloud_run_service",
         "enumerate_build_triggers", "enumerate_build_history", "describe_cloud_build",
@@ -175,10 +175,10 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
         "enumerate_exploitable_sas", "enumerate_delegation_chains",
         "enumerate_resource_permissions", "enumerate_secrets", "enumerate_source_repos",
         "enumerate_artifacts", "enumerate_artifact_packages", "enumerate_artifact_versions",
-        "enumerate_drive", "search_drive", "list_shared_drive", "describe_drive_file",
+        "enumerate_drive", "search_drive", "enumerate_shared_files", "describe_drive_file",
         "download_drive_file", "download_drive_files",
-        "who_can_impersonate", "describe_role", "list_roles",
-        "bruteforce_permissions", "privesc_paths",
+        "describe_service_account_iam_policy", "describe_role", "enumerate_predefined_roles",
+        "enumerate_bruteforce_permissions", "analyze_privilege_escalation_paths",
         # Lateral Movement
         "map_impersonation", "find_chains", "impersonate", "gen_token_curl",
         "create_sa_key", "list_sa_keys", "delete_sa_key",
@@ -187,8 +187,11 @@ def build_completer(session_mgr: GCPSessionManager, force_rebuild: bool = False)
         "impersonate_jwt", "generate_jwt", "exchange_jwt", "show_jwt_templates",
         # Exfiltration
         "clone_source_repo", "clone_all_source_repos",
-        "download_object", "exfil_bucket", "exfil_parameters", "exfil_parameter",
-        "exfil_secrets", "exfil_secret", "download_artifact",
+        "download_object", "download_bucket",
+        "exfiltrate_parameters", "exfiltrate_parameter",
+        "exfiltrate_secrets", "exfiltrate_secret",
+        "download_artifact",
+        "download_file", "download_files_batch", "enumerate_shared_files",
         # Passthrough
         "gcloud", "gsutil",
     ]
@@ -965,12 +968,12 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 enumerate_compute_metadata(session_mgr)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "show_metadata_detail":
+            elif cmd == "describe_metadata_detail":
                 # Display detailed metadata value for a specific instance or project
-                # Usage: show_metadata_detail [instance_name] [key]
+                # Usage: describe_metadata_detail [instance_name] [key]
                 instance_name = args[0] if args else None
                 key = args[1] if len(args) > 1 else None
-                show_metadata_detail(session_mgr, instance_name, key)
+                describe_metadata_detail(session_mgr, instance_name, key)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_storage":
@@ -1105,11 +1108,11 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 search_drive_files(session_mgr, keywords=keywords)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "list_shared_drive":
-                # List shared Google Drive files
-                # Usage: list_shared_drive [public_only]
+            elif cmd == "enumerate_shared_files":
+                # Enumerate shared Google Drive files
+                # Usage: enumerate_shared_files [public_only]
                 public_only = args[0].lower() == 'public' if args else False
-                list_shared_files(session_mgr, publicly_shared=public_only)
+                enumerate_shared_files(session_mgr, publicly_shared=public_only)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "describe_drive_file":
@@ -1146,10 +1149,10 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                         download_files_batch(session_mgr, drive_files, output_dir, max_workers)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "who_can_impersonate":
-                # Get IAM policy for a service account (shows who can impersonate it)
+            elif cmd == "describe_service_account_iam_policy":
+                # Describe IAM policy for a service account (shows who can impersonate it)
                 sa_email = args[0] if args else None
-                get_service_account_iam_policy(session_mgr, sa_email)
+                describe_service_account_iam_policy(session_mgr, sa_email)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "describe_role":
@@ -1159,20 +1162,20 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 describe_role(session_mgr, role_name, project_id)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "list_roles":
-                # List predefined roles
+            elif cmd == "enumerate_predefined_roles":
+                # Enumerate predefined roles
                 filter_pattern = args[0] if args else None
-                list_predefined_roles(session_mgr, filter_pattern)
+                enumerate_predefined_roles(session_mgr, filter_pattern)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "bruteforce_permissions":
+            elif cmd == "enumerate_bruteforce_permissions":
                 # IAM permission bruteforce enumeration
-                # Usage: bruteforce_permissions [services] [mode]
+                # Usage: enumerate_bruteforce_permissions [services] [mode]
                 # Examples:
-                #   bruteforce_permissions           -> fast mode, all services
-                #   bruteforce_permissions full      -> full mode, all services
-                #   bruteforce_permissions low       -> low mode, all services
-                #   bruteforce_permissions iam,compute fast -> specific services, fast mode
+                #   enumerate_bruteforce_permissions           -> fast mode, all services
+                #   enumerate_bruteforce_permissions full      -> full mode, all services
+                #   enumerate_bruteforce_permissions low       -> low mode, all services
+                #   enumerate_bruteforce_permissions iam,compute fast -> specific services, fast mode
                 services_arg = None
                 mode = "fast"
 
@@ -1187,12 +1190,12 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                         if len(args) > 1 and args[1].lower() in ("fast", "full", "low"):
                             mode = args[1].lower()
 
-                bruteforce_permissions(session_mgr, services_arg, mode)
+                enumerate_bruteforce_permissions(session_mgr, services_arg, mode)
                 _log_command(session_mgr, f"{cmd} {mode}")
 
-            elif cmd == "privesc_paths":
+            elif cmd == "analyze_privilege_escalation_paths":
                 # Analyze privilege escalation paths from bruteforce results
-                show_privilege_escalation_paths(session_mgr)
+                analyze_privilege_escalation_paths(session_mgr)
                 _log_command(session_mgr, cmd)
 
             # ---------- Lateral Movement ----------
@@ -1639,9 +1642,9 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 else:
                     console.print("[red]Bucket name and object name are required.[/red]")
 
-            elif cmd == "exfil_bucket":
+            elif cmd == "download_bucket":
                 # Download all objects from a bucket
-                # Usage: exfil_bucket <bucket> [prefix] [max_objects] [max_size_mb]
+                # Usage: download_bucket <bucket> [prefix] [max_objects] [max_size_mb]
                 if not args:
                     console.print("[bold yellow]📦 Exfiltrate Bucket[/bold yellow]")
                     bucket_name = Prompt.ask("[cyan]Bucket name[/cyan]")
@@ -1670,16 +1673,16 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 else:
                     console.print("[red]Bucket name is required.[/red]")
 
-            elif cmd == "exfil_parameters":
+            elif cmd == "exfiltrate_parameters":
                 # Exfiltrate all parameters from Parameter Manager
-                # Usage: exfil_parameters [project_id]
+                # Usage: exfiltrate_parameters [project_id]
                 project_id = args[0] if args else None
-                exfil_parameters(session_mgr, project_id)
+                exfiltrate_parameters(session_mgr, project_id)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "exfil_parameter":
+            elif cmd == "exfiltrate_parameter":
                 # Exfiltrate a single parameter
-                # Usage: exfil_parameter <name> [project_id] [location] [version]
+                # Usage: exfiltrate_parameter <name> [project_id] [location] [version]
                 if not args:
                     console.print("[bold yellow]🔑 Exfiltrate Single Parameter[/bold yellow]")
                     param_name = Prompt.ask("[cyan]Parameter name[/cyan]")
@@ -1696,21 +1699,21 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                     version = args[3] if len(args) > 3 else "latest"
 
                 if param_name:
-                    exfil_single_parameter(session_mgr, param_name, project_id, location, version)
+                    exfiltrate_parameter(session_mgr, param_name, project_id, location, version)
                     _log_command(session_mgr, f"{cmd} {param_name}")
                 else:
                     console.print("[red]Parameter name is required.[/red]")
 
-            elif cmd == "exfil_secrets":
+            elif cmd == "exfiltrate_secrets":
                 # Exfiltrate all secrets from Secret Manager
-                # Usage: exfil_secrets [project_id]
+                # Usage: exfiltrate_secrets [project_id]
                 project_id = args[0] if args else None
-                exfil_secrets(session_mgr, project_id)
+                exfiltrate_secrets(session_mgr, project_id)
                 _log_command(session_mgr, cmd)
 
-            elif cmd == "exfil_secret":
+            elif cmd == "exfiltrate_secret":
                 # Exfiltrate a single secret
-                # Usage: exfil_secret <name> [project_id] [version] [location]
+                # Usage: exfiltrate_secret <name> [project_id] [version] [location]
                 if not args:
                     console.print("[bold yellow]🔑 Exfiltrate Single Secret[/bold yellow]")
                     secret_name = Prompt.ask("[cyan]Secret name[/cyan]")
@@ -1731,7 +1734,7 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                     location = args[3] if len(args) > 3 else None
 
                 if secret_name:
-                    exfil_single_secret(session_mgr, secret_name, project_id, version, location)
+                    exfiltrate_secret(session_mgr, secret_name, project_id, version, location)
                     _log_command(session_mgr, f"{cmd} {secret_name}")
                 else:
                     console.print("[red]Secret name is required.[/red]")

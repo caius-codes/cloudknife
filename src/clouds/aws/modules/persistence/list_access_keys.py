@@ -88,9 +88,9 @@ def list_access_keys(session_mgr: AWSSessionManager, username: str = None) -> No
         console.print(f"[red]Failed to list access keys: {str(e)}[/red]")
 
 
-def list_access_keys_interactive(session_mgr: AWSSessionManager) -> None:
-    """Interactive wrapper for list_access_keys."""
-    console.print("[bold yellow]🔍 List IAM Access Keys[/bold yellow]")
+def enumerate_access_keys(session_mgr: AWSSessionManager) -> None:
+    """Interactive wrapper to enumerate IAM access keys."""
+    console.print("[bold yellow]🔍 Enumerate IAM Access Keys[/bold yellow]")
     console.print("[dim]Lists all access keys for a user (max 2 per user).[/dim]\n")
 
     username = Prompt.ask(

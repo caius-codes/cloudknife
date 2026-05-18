@@ -73,14 +73,14 @@ def _decrypt_password(encrypted_password_b64: str, private_key_path: str) -> Opt
         return None
 
 
-def ec2_get_password(
+def exfiltrate_ec2_password(
     session_mgr: AWSSessionManager,
     instance_id: Optional[str] = None,
     private_key_path: Optional[str] = None,
     region: Optional[str] = None
 ):
     """
-    Retrieve and decrypt the Administrator password for a Windows EC2 instance.
+    Exfiltrate and decrypt the Administrator password for a Windows EC2 instance.
 
     Args:
         session_mgr: Session manager instance

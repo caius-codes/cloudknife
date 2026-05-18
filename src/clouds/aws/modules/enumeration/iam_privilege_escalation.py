@@ -346,9 +346,9 @@ def _display_critical_paths(paths: List[Dict[str, Any]]) -> None:
     )
 
 
-def show_privilege_escalation_paths(session_mgr: AWSSessionManager) -> None:
+def analyze_privilege_escalation_paths(session_mgr: AWSSessionManager) -> None:
     """
-    Display previously analyzed privilege escalation paths from session.
+    Analyze and display privilege escalation paths from session.
 
     Args:
         session_mgr: AWS session manager instance

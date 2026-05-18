@@ -60,7 +60,7 @@ def _list_object_versions(s3_client, bucket: str, key: str) -> List[Dict[str, An
     return versions
 
 
-def s3_download_object(session_mgr: AWSSessionManager, bucket: Optional[str] = None, key: Optional[str] = None,
+def download_s3_object(session_mgr: AWSSessionManager, bucket: Optional[str] = None, key: Optional[str] = None,
                        dest: Optional[str] = None, version_id: Optional[str] = None):
     """
     Download a single S3 object to local filesystem.

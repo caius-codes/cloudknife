@@ -303,9 +303,9 @@ def show_attached_policies(session_mgr: AWSSessionManager, entity_type: str, ent
             console.print("[yellow]Ensure iam:ListAttachedRolePolicies permission.[/yellow]")
 
 
-def show_policy_document(session_mgr: AWSSessionManager, arn: Optional[str] = None) -> None:
+def describe_policy_document(session_mgr: AWSSessionManager, arn: Optional[str] = None) -> None:
     """
-    Interactive wrapper to fetch and show IAM policy documents.
+    Interactive wrapper to fetch and describe IAM policy documents.
     Supports:
     - Managed policies (by ARN)
     - Inline policies (by name + entity)

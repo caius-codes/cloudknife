@@ -245,7 +245,7 @@ def _extract_summary(endpoint: str, data: Dict[str, Any]) -> str:
     return "Access granted"
 
 
-def discover_accessible_services(
+def enumerate_accessible_services(
     session_mgr: AzureSessionManager,
 ) -> Optional[Dict[str, Any]]:
     """

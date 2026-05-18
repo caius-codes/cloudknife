@@ -237,12 +237,12 @@ def _display_role(role_data: Dict[str, Any]) -> None:
                 console.print(f"    [dim]•[/dim] {perm}")
 
 
-def list_predefined_roles(
+def enumerate_predefined_roles(
     session_mgr: "GCPSessionManager",
     filter_pattern: str = None,
 ) -> Optional[List[Dict[str, str]]]:
     """
-    List predefined GCP roles.
+    Enumerate predefined GCP roles.
 
     Args:
         session_mgr: GCP session manager

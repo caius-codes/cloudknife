@@ -12,14 +12,15 @@ from src.core.icons import icons
 
 # Enumeration modules - alphabetically sorted
 from .modules.enumeration import (
-    bruteforce_aad_permissions,
-    bruteforce_graph_permissions,
+    enumerate_accessible_services,
     enumerate_administrative_unit_members,
     enumerate_administrative_unit_scoped_members,
     enumerate_administrative_units,
     enumerate_all_role_assignments,
     enumerate_apps,
     enumerate_apps_legacy,
+    enumerate_bruteforce_aad_permissions,
+    enumerate_bruteforce_graph_permissions,
     enumerate_ca_policies,
     enumerate_container_apps,
     enumerate_container_apps_full,
@@ -160,8 +161,8 @@ def build_completer(session_mgr: AzureSessionManager) -> WordCompleter:
         "set_token",
         "set_refresh_token",
         # Enumeration (alphabetically)
-        "bruteforce_aad_permissions",
-        "bruteforce_graph_permissions",
+        "enumerate_bruteforce_aad_permissions",
+        "enumerate_bruteforce_graph_permissions",
         "cloudprowl",
         "discover_services",
         "enumerate_administrative_unit_members",
@@ -1727,7 +1728,7 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                 _log_command(session_mgr, cmd, status)
 
             # Microsoft Graph API Operations
-            elif cmd == "bruteforce_graph_permissions":
+            elif cmd == "enumerate_bruteforce_graph_permissions":
                 try:
                     # Parse mode from args (default: fast)
                     mode = args[0].lower() if args else "fast"
@@ -1744,7 +1745,7 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                     status = "failed"
                 _log_command(session_mgr, cmd, status)
 
-            elif cmd == "bruteforce_aad_permissions":
+            elif cmd == "enumerate_bruteforce_aad_permissions":
                 try:
                     # Parse mode from args (default: fast)
                     mode = args[0].lower() if args else "fast"

@@ -21,9 +21,9 @@ def _get_cached_tables(session_mgr: AWSSessionManager) -> List[Dict[str, Any]]:
     )
 
 
-def dynamodb_table_details(session_mgr: AWSSessionManager, table_name: Optional[str] = None) -> None:
+def describe_dynamodb_table(session_mgr: AWSSessionManager, table_name: Optional[str] = None) -> None:
     """
-    Show detailed information (DescribeTable JSON) for a specific DynamoDB table.
+    Describe detailed information (DescribeTable JSON) for a specific DynamoDB table.
 
     - Uses cached 'dynamodb_tables' to infer region and basic metadata.
     - Calls dynamodb:DescribeTable once and prints:

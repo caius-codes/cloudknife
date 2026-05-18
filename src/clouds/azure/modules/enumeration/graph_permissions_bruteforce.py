@@ -9,7 +9,7 @@ to determine permissions. We use minimal read operations and fake resource IDs
 for write permissions to avoid modifying real data.
 
 Usage:
-    bruteforce_graph_permissions         # Fast mode (default) - key permissions
+    enumerate_bruteforce_graph_permissions         # Fast mode (default) - key permissions
 """
 
 import base64
@@ -874,7 +874,7 @@ def _test_graph_permission(
         return (permission, "ERROR", str(e)[:100])
 
 
-def bruteforce_graph_permissions(
+def enumerate_bruteforce_graph_permissions(
     session_mgr: AzureSessionManager,
     mode: str = "fast"
 ) -> Optional[Dict[str, Any]]:

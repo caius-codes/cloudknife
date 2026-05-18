@@ -536,13 +536,13 @@ def _normalize_services_arg(
     return valid
 
 
-def bruteforce_permissions(
+def enumerate_bruteforce_permissions(
     session_mgr: "GCPSessionManager",
     services_arg: Optional[str] = None,
     mode: str = "fast",
 ) -> Optional[Dict[str, Any]]:
     """
-    Enumerate GCP IAM permissions using hybrid approach:
+    Enumerate GCP IAM permissions using bruteforce hybrid approach:
     1. testIamPermissions API (fast, project-level)
     2. Actual API calls (slower, but catches resource-level permissions)
     """
@@ -843,7 +843,7 @@ def bruteforce_permissions(
     return enumeration_results
 
 
-def show_privilege_escalation_paths(
+def analyze_privilege_escalation_paths(
     session_mgr: "GCPSessionManager",
 ) -> None:
     """

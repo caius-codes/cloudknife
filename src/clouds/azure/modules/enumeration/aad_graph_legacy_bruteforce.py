@@ -9,8 +9,8 @@ Enumerates Azure AD Graph API permissions by making actual API calls.
 Similar to the Microsoft Graph bruteforce but uses legacy endpoints.
 
 Usage:
-    bruteforce_aad_permissions         # Fast mode (default) - key permissions
-    bruteforce_aad_permissions full    # Full mode - all permissions
+    enumerate_bruteforce_aad_permissions         # Fast mode (default) - key permissions
+    enumerate_bruteforce_aad_permissions full    # Full mode - all permissions
 """
 
 import base64
@@ -410,7 +410,7 @@ def _test_aad_permission(
         return (permission, "ERROR", str(e)[:100])
 
 
-def bruteforce_aad_permissions(
+def enumerate_bruteforce_aad_permissions(
     session_mgr: AzureSessionManager,
     mode: str = "fast"
 ) -> Optional[Dict[str, Any]]:
