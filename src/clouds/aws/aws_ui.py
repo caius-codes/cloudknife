@@ -125,7 +125,7 @@ def print_help():
         ("enumerate_rds_snapshots [manual|automated] [--no-sharing]", "List RDS/Aurora snapshots (manual: user-created | automated: AWS-created | both if omitted) and check sharing attributes"),
         ("enumerate_rds_public_snapshots", "Search for PUBLIC RDS snapshots from other accounts (misconfigurations)"),
         ("enumerate_roles", "List IAM roles and test sts:AssumeRole (✅/❌/⚠️)"),
-        ("enumerate_s3_buckets", "List all S3 buckets in the account"),
+        ("enumerate_s3_buckets [bucket_name]", "List all S3 buckets or analyze a specific bucket (optional: bucket_name)"),
         ("enumerate_s3_objects [bucket] [prefix]", "Recursively list objects in a bucket/prefix"),
         ("enumerate_secrets", "List Secrets Manager secrets across regions"),
         ("enumerate_ssm", "List SSM Parameter Store parameters across regions (flags SecureString)"),

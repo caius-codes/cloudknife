@@ -43,6 +43,7 @@ aws_credentials
 # Temp files
 *.tmp
 *.bak
+*.backup
 
 # Implementation & work documents (internal dev notes)
 CLI_ICONS_*.md

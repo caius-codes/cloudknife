@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import argparse
+import asyncio
+import sys
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -85,6 +88,40 @@ def select_cloud(current_cloud: str = "aws") -> str:
 
 
 def main() -> None:
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="CloudKnife - Multi-Cloud Penetration Testing Tool"
+    )
+    parser.add_argument(
+        '--webserver',
+        action='store_true',
+        help='Start WebSocket server for web interface integration'
+    )
+    parser.add_argument(
+        '--host',
+        default='localhost',
+        help='WebSocket server host (default: localhost)'
+    )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=8765,
+        help='WebSocket server port (default: 8765)'
+    )
+
+    args = parser.parse_args()
+
+    # If webserver flag is set, start WebSocket server
+    if args.webserver:
+        from .webserver.ws_server import run_server
+        console.print("\n[bold cyan]CloudKnife WebSocket Server[/bold cyan]")
+        console.print(f"[dim]Starting on {args.host}:{args.port}[/dim]\n")
+        try:
+            asyncio.run(run_server(args.host, args.port))
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Server stopped[/yellow]")
+        sys.exit(0)
+
     print_banner()
     # primo avvio: mostra sempre lo switcher
     current_cloud = select_cloud("aws")

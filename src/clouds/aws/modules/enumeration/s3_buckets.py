@@ -9,9 +9,13 @@ from src.clouds.aws.utils.error_handling import safe_aws_call
 console = Console()
 
 
-def enumerate_s3_buckets(session_mgr: AWSSessionManager) -> None:
+def enumerate_s3_buckets(session_mgr: AWSSessionManager, bucket_name: Optional[str] = None) -> None:
     """
     Comprehensive S3 bucket enumeration with security-focused analysis.
+
+    Args:
+        session_mgr: AWS session manager
+        bucket_name: Optional specific bucket name to analyze. If None, lists all buckets.
 
     Collects for each bucket:
     - Basic metadata (name, creation date, region)
@@ -36,7 +40,7 @@ def enumerate_s3_buckets(session_mgr: AWSSessionManager) -> None:
     Saves detailed results under 's3_buckets' in session data.
 
     Required Permissions:
-    - s3:ListAllMyBuckets (required)
+    - s3:ListAllMyBuckets (required if bucket_name is None)
     - s3:GetBucketLocation (required)
     - s3:GetBucketAcl (recommended)
     - s3:GetBucketPublicAccessBlock (recommended)
@@ -49,25 +53,33 @@ def enumerate_s3_buckets(session_mgr: AWSSessionManager) -> None:
         console.print("[red]No credentials in current session. Run 'set_keys'.[/red]")
         return
 
-    console.print("[bold blue]🔍 Enumerating S3 buckets with security analysis...[/bold blue]")
-
     aws_sess = session_mgr.get_boto3_session()
     s3 = aws_sess.client("s3")
 
-    # List all buckets
-    resp, error = safe_aws_call(s3.list_buckets, log_error=True, default=None)
-    if error or not resp:
-        console.print(f"[red]Failed to list buckets: {error.message if error else 'Unknown error'}[/red]")
-        console.print("[yellow]Ensure s3:ListAllMyBuckets permission.[/yellow]")
-        return
+    # Determine operation based on bucket_name parameter
+    if bucket_name is None:
+        # No specific bucket provided - enumerate all buckets
+        console.print("[bold blue]🔍 Enumerating S3 buckets with security analysis...[/bold blue]")
+        resp, error = safe_aws_call(s3.list_buckets, log_error=True, default=None)
+        if error or not resp:
+            console.print(f"[red]Failed to list buckets: {error.message if error else 'Unknown error'}[/red]")
+            console.print("[yellow]Ensure s3:ListAllMyBuckets permission.[/yellow]")
+            console.print("\n[cyan]💡 Tip: If you don't have s3:ListAllMyBuckets permission, you can analyze a specific bucket:[/cyan]")
+            console.print("[dim]   enumerate_s3_buckets <bucket-name>[/dim]")
+            return
 
-    bucket_names = [b.get("Name", "") for b in resp.get("Buckets", [])]
+        bucket_names = [b.get("Name", "") for b in resp.get("Buckets", [])]
 
-    if not bucket_names:
-        console.print("[yellow]No buckets found.[/yellow]")
-        return
+        if not bucket_names:
+            console.print("[yellow]No buckets found.[/yellow]")
+            return
 
-    console.print(f"[cyan]Found {len(bucket_names)} bucket(s). Analyzing security configurations...[/cyan]")
+        console.print(f"[cyan]Found {len(bucket_names)} bucket(s). Analyzing security configurations...[/cyan]")
+    else:
+        # Specific bucket name was provided as argument
+        console.print(f"[bold blue]🔍 Analyzing S3 bucket: {bucket_name}[/bold blue]")
+        bucket_names = [bucket_name]
+        resp = None  # No listing response available
 
     buckets: List[Dict[str, Any]] = []
 
@@ -86,11 +98,14 @@ def enumerate_s3_buckets(session_mgr: AWSSessionManager) -> None:
         region = location_resp.get("LocationConstraint") or "us-east-1"
         bucket_data["Region"] = region
 
-        # Get creation date from initial list
-        for b in resp.get("Buckets", []):
-            if b.get("Name") == bucket_name:
-                bucket_data["CreationDate"] = str(b.get("CreationDate", ""))[:19]
-                break
+        # Get creation date from initial list (only available if we did a full listing)
+        if resp:
+            for b in resp.get("Buckets", []):
+                if b.get("Name") == bucket_name:
+                    bucket_data["CreationDate"] = str(b.get("CreationDate", ""))[:19]
+                    break
+        else:
+            bucket_data["CreationDate"] = "N/A"
 
         # Get bucket ACL (public access via ACL)
         acl_resp, _ = safe_aws_call(

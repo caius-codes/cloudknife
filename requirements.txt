@@ -3,6 +3,7 @@ click>=8.1.0
 rich>=13.0.0
 rich-click>=1.7.0
 prompt_toolkit>=3.0.47
+websockets>=12.0
 azure-identity>=1.15.0
 azure-mgmt-resource
 azure-mgmt-subscription>=3.1.0
@@ -26,3 +27,4 @@ google-cloud-functions>=1.13.0
 google-auth>=2.25.0
 google-api-python-client>=2.100.0
 PyJWT>=2.8.0
+watchdog>=3.0.0

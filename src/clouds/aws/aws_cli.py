@@ -730,7 +730,8 @@ def run_aws_cli(session_mgr: AWSSessionManager) -> str:
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_s3_buckets":
-                enumerate_s3_buckets(session_mgr)
+                bucket_name = args[0] if len(args) > 0 else None
+                enumerate_s3_buckets(session_mgr, bucket_name)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_s3_objects":

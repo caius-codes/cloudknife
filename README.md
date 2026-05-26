@@ -288,6 +288,32 @@ set_token
 
 ---
 
+## Web Interface
+
+CloudKnife includes a WebSocket server for real-time integration with a web-based frontend.
+
+### Start the WebSocket Server
+
+```bash
+cloudknife --webserver
+# Custom host/port
+cloudknife --webserver --host 0.0.0.0 --port 8765
+```
+
+### Features
+
+- **Real-time session synchronization** - Web UI automatically detects CLI session changes
+- **Visual graph representation** - Interactive node graph of cloud resources and relationships
+- **Module execution** - Run enumeration, exfiltration, and lateral movement modules from the web UI
+- **Live output streaming** - See module output in real-time as it executes
+- **Session management** - Create, switch, and manage sessions across AWS, GCP, and Azure
+
+The WebSocket server broadcasts all session updates, credential changes, and enumeration results to connected web clients. Session files created via CLI are automatically imported into the web interface.
+
+**Web Frontend:** [cloud-knife-web-interface](https://github.com/caius-codes/cloud-knife-web-interface) (requires separate installation)
+
+---
+
 ## Data Storage
 
 CloudKnife stores all data in a centralized location in your home directory, independent of where you run the tool:
