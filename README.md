@@ -310,7 +310,7 @@ cloudknife --webserver --host 0.0.0.0 --port 8765
 
 The WebSocket server broadcasts all session updates, credential changes, and enumeration results to connected web clients. Session files created via CLI are automatically imported into the web interface.
 
-**Web Frontend:** [cloud-knife-web-interface](https://github.com/caius-codes/cloud-knife-web-interface) (requires separate installation)
+**Web Frontend:** [cloudknife-web-interface](https://github.com/caius-codes/cloudknife-web-interface) (requires separate installation)
 
 ---
 
