@@ -154,7 +154,8 @@ class SessionManager(ABC):
         """List all saved sessions with cloud-specific fields."""
         sessions: List[Dict[str, Any]] = []
         for session_file in self.sessions_dir.glob("*.json"):
-            if session_file.stem.endswith("_enum"):
+            # Skip enumeration files and service account key files
+            if session_file.stem.endswith("_enum") or session_file.stem.endswith("_key"):
                 continue
             try:
                 with open(session_file, "r") as f:
@@ -178,7 +179,8 @@ class SessionManager(ABC):
         Returns True if deleted, False if refused (only one session or current).
         """
         all_sessions = [
-            f for f in self.sessions_dir.glob("*.json") if not f.stem.endswith("_enum")
+            f for f in self.sessions_dir.glob("*.json")
+            if not f.stem.endswith("_enum") and not f.stem.endswith("_key")
         ]
         if len(all_sessions) <= 1:
             return False
@@ -207,13 +209,13 @@ class SessionManager(ABC):
 
         Returns the number of sessions deleted.
         """
-        # Delete all .json files (*.json pattern matches both session files and *_enum.json)
+        # Delete all .json files (*.json pattern matches session files, *_enum.json, and *_key.json)
         deleted = 0
         for session_file in self.sessions_dir.glob("*.json"):
             try:
                 session_file.unlink()
-                # Count only primary session files, not the companion *_enum.json
-                if not session_file.name.endswith("_enum.json"):
+                # Count only primary session files, not companion files (_enum.json, _key.json)
+                if not session_file.name.endswith("_enum.json") and not session_file.name.endswith("_key.json"):
                     deleted += 1
             except Exception:
                 continue

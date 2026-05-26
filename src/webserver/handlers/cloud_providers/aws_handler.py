@@ -236,13 +236,11 @@ class AWSHandler(BaseHandler):
             manager.create_or_load_session(original_session)
 
             await self._broadcast_module_output(execution_id, "✓ New session created with assumed-role credentials")
-            await self._broadcast_module_output(execution_id, f"\nAssumed Role Credentials - Session: {new_session_name}")
-            await self._broadcast_module_output(execution_id, f"AWS_ACCESS_KEY_ID: {access_key}")
-            await self._broadcast_module_output(execution_id, f"AWS_SECRET_ACCESS_KEY: {secret_key[:20]}...")
-            await self._broadcast_module_output(execution_id, f"AWS_SESSION_TOKEN: {session_token[:50]}...")
+            await self._broadcast_module_output(execution_id, f"\n✅ Assumed role credentials configured")
+            await self._broadcast_module_output(execution_id, f"Session: {new_session_name}")
             if expiration:
                 await self._broadcast_module_output(execution_id, f"Expiration: {str(expiration)[:19]}")
-            await self._broadcast_module_output(execution_id, f"AWS_DEFAULT_REGION: {manager.default_region}")
+            await self._broadcast_module_output(execution_id, f"Region: {manager.default_region}")
 
             # Create graph nodes and edges
             try:

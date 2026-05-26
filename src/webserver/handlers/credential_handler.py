@@ -38,6 +38,9 @@ class CredentialHandler(BaseHandler):
             payload = message.payload
             cloud = payload.get('cloud')
 
+            logger.info(f"[SetKeys] Received request for cloud={cloud}")
+            logger.info(f"[SetKeys] Current state: session={self.current_session}, cloud={self.current_cloud}")
+
             if not cloud:
                 return create_error_response(
                     message.type,
@@ -46,9 +49,10 @@ class CredentialHandler(BaseHandler):
                 )
 
             if not self.current_session or self.current_cloud != cloud:
+                logger.error(f"[SetKeys] Session mismatch: current_session={self.current_session}, current_cloud={self.current_cloud}, requested_cloud={cloud}")
                 return create_error_response(
                     message.type,
-                    "No active session. Create or switch to a session first.",
+                    f"No active {cloud.upper()} session. Current session: {self.current_session or 'None'}, Current cloud: {self.current_cloud or 'None'}. Create or switch to a {cloud.upper()} session first.",
                     message.request_id
                 )
 
@@ -191,18 +195,214 @@ class CredentialHandler(BaseHandler):
             # Handle GCP credentials
             elif cloud == 'gcp':
                 service_account_json = payload.get('service_account_json')
+                access_token = payload.get('access_token')
+                project_id = payload.get('project_id')
 
-                if not service_account_json:
+                logger.info(f"[SetKeys GCP] service_account_json present: {bool(service_account_json)}")
+                logger.info(f"[SetKeys GCP] access_token present: {bool(access_token)}")
+                logger.info(f"[SetKeys GCP] project_id: {project_id}")
+
+                # Must have either service account JSON or access token
+                if not service_account_json and not access_token:
                     return create_error_response(
                         message.type,
-                        "Missing required GCP credential: service_account_json",
+                        "Missing required GCP credentials: provide either service_account_json or access_token",
                         message.request_id
                     )
 
-                # TODO: Implement GCP credential setting
-                return create_error_response(
+                # Get or create GCP session manager
+                if 'gcp' not in self.session_managers:
+                    from pathlib import Path
+                    from src.clouds.gcp.gcp_session import GCPSessionManager
+                    sessions_base = Path.home() / '.cloudknife' / 'sessions'
+                    self.session_managers['gcp'] = GCPSessionManager(str(sessions_base / 'gcp'))
+
+                manager = self.session_managers['gcp']
+
+                # Load current session
+                manager.create_or_load_session(self.current_session)
+
+                # Set credentials based on type
+                success = False
+                auth_method = None
+
+                if service_account_json:
+                    # Service Account JSON
+                    import tempfile
+                    import os
+                    import json
+                    import re
+
+                    logger.info(f"[SetKeys GCP] Processing service account JSON")
+
+                    # Validate JSON structure
+                    if not isinstance(service_account_json, dict):
+                        logger.error(f"[SetKeys GCP] service_account_json is not a dict: {type(service_account_json)}")
+                        return create_error_response(
+                            message.type,
+                            f"Invalid service account JSON format: expected dict, got {type(service_account_json).__name__}",
+                            message.request_id
+                        )
+
+                    # Check required fields
+                    required_fields = ['type', 'private_key', 'client_email']
+                    missing_fields = [f for f in required_fields if f not in service_account_json]
+                    if missing_fields:
+                        logger.error(f"[SetKeys GCP] Missing required fields: {missing_fields}")
+                        return create_error_response(
+                            message.type,
+                            f"Invalid service account JSON: missing required fields: {', '.join(missing_fields)}",
+                            message.request_id
+                        )
+
+                    # Ensure project_id is set to avoid interactive prompt in CLI module
+                    # Priority: user-specified project_id > existing project_id in JSON > inferred from email
+                    if not service_account_json.get('project_id'):
+                        if project_id:
+                            # User specified a project_id in the payload
+                            logger.info(f"[SetKeys GCP] Using user-specified project_id: {project_id}")
+                            service_account_json['project_id'] = project_id
+                        else:
+                            # Try to infer project_id from service account email
+                            # Format: name@PROJECT-ID.iam.gserviceaccount.com
+                            client_email = service_account_json.get('client_email', '')
+                            pattern = r'^[^@]+@([^.]+)\.iam\.gserviceaccount\.com$'
+                            match = re.match(pattern, client_email)
+
+                            if match:
+                                inferred_project = match.group(1)
+                                logger.info(f"[SetKeys GCP] Inferred project_id from email: {inferred_project}")
+                                service_account_json['project_id'] = inferred_project
+                            else:
+                                logger.warning(f"[SetKeys GCP] Could not infer project_id from email: {client_email}")
+                    else:
+                        logger.info(f"[SetKeys GCP] Using project_id from JSON: {service_account_json['project_id']}")
+
+                    # Write JSON to permanent file in session directory (not temp file!)
+                    # This allows the CLI to read credentials from the same session
+                    from pathlib import Path
+                    sessions_base = Path.home() / '.cloudknife' / 'sessions' / 'gcp'
+                    sessions_base.mkdir(parents=True, exist_ok=True)
+
+                    key_file_path = sessions_base / f"{self.current_session}_key.json"
+
+                    try:
+                        # Write service account JSON to permanent file
+                        with open(key_file_path, 'w') as f:
+                            json.dump(service_account_json, f, indent=2)
+
+                        # Set restrictive permissions (only owner can read/write)
+                        os.chmod(key_file_path, 0o600)
+
+                        logger.info(f"[SetKeys GCP] Saved service account key to: {key_file_path}")
+                        logger.info(f"[SetKeys GCP] Calling manager.set_service_account() with project_id: {service_account_json.get('project_id')}")
+
+                        # Set service account (now with project_id, so no interactive prompt)
+                        success = manager.set_service_account(str(key_file_path))
+                        auth_method = 'service_account'
+
+                        logger.info(f"[SetKeys GCP] set_service_account returned: {success}")
+                    except Exception as e:
+                        logger.error(f"[SetKeys GCP] Error writing/processing service account JSON: {e}", exc_info=True)
+                        # Clean up key file if something went wrong
+                        try:
+                            if key_file_path.exists():
+                                key_file_path.unlink()
+                        except Exception:
+                            pass
+                        return create_error_response(
+                            message.type,
+                            f"Failed to process service account JSON: {str(e)}",
+                            message.request_id
+                        )
+
+                elif access_token:
+                    # Access Token
+                    success = manager.set_access_token(
+                        token=access_token,
+                        project_id=project_id,
+                        skip_tokeninfo=True
+                    )
+                    auth_method = 'access_token'
+
+                if not success:
+                    return create_error_response(
+                        message.type,
+                        "Failed to set GCP credentials",
+                        message.request_id
+                    )
+
+                # Get identity info and verify credentials (similar to AWS whoami)
+                project_id = manager.current_session_data.get('project_id')
+                service_account_email = manager.current_session_data.get('service_account_email')
+
+                identity_data = {
+                    'auth_method': auth_method,
+                    'project_id': project_id,
+                    'service_account_email': service_account_email,
+                }
+
+                # Try to get token info to verify credentials and enrich identity data
+                try:
+                    token_info = manager.get_token_info()
+                    if token_info and 'error' not in token_info:
+                        # Add token info to identity data
+                        identity_data['email'] = token_info.get('email', service_account_email)
+                        identity_data['scopes'] = token_info.get('scope', '').split() if token_info.get('scope') else []
+                        identity_data['expires_in'] = token_info.get('expires_in')
+
+                        logger.info(f"[SetKeys GCP] Token verified. Email: {identity_data['email']}")
+                    else:
+                        logger.warning(f"[SetKeys GCP] Could not verify token: {token_info}")
+                except Exception as e:
+                    logger.warning(f"[SetKeys GCP] Failed to get token info: {e}")
+                    # Continue anyway - credentials might still work
+
+                # Broadcast graph node UPDATE with identity information
+                if self.broadcast_callback:
+                    session_node = {
+                        'id': self.current_session_id,
+                        'type': 'gcp-session',
+                        'label': self.current_session,
+                        'provider': 'gcp',
+                        'discoveredBy': [self.current_session_id],
+                        'parentId': None,
+                        'data': {
+                            'sessionName': self.current_session,
+                            'sessionId': self.current_session_id,
+                            'identity': identity_data,
+                            'credentials': {
+                                'configured': True,
+                                'auth_method': auth_method,
+                            }
+                        },
+                        'metadata': {
+                            'discoveredAt': datetime.now().isoformat(),
+                            'moduleUsed': 'set_credentials',
+                            'project_id': project_id,
+                            'service_account_email': service_account_email,
+                            'auth_method': auth_method,
+                        },
+                        'level': 0,
+                    }
+
+                    # Broadcast UPDATE to all clients
+                    asyncio.create_task(
+                        self.broadcast_callback(
+                            create_success_response(
+                                'graph.node.update',
+                                {'node': session_node}
+                            )
+                        )
+                    )
+
+                return create_success_response(
                     message.type,
-                    "GCP credential setting not yet implemented",
+                    {
+                        'message': 'GCP credentials configured successfully',
+                        'auth_method': auth_method,
+                        'project_id': project_id,
+                    },
                     message.request_id
                 )
 
@@ -323,6 +523,49 @@ class CredentialHandler(BaseHandler):
                     return create_error_response(
                         message.type,
                         f"AWS Error: {str(e)}",
+                        message.request_id
+                    )
+
+            elif self.current_cloud == 'gcp':
+                # Get session manager
+                manager = self.session_managers.get(self.current_cloud)
+                if not manager:
+                    return create_error_response(
+                        message.type,
+                        "Session manager not initialized. Create or switch to a session first.",
+                        message.request_id
+                    )
+
+                try:
+                    # Get identity info from session data
+                    auth_method = manager.current_session_data.get('auth_method')
+                    project_id = manager.current_session_data.get('project_id')
+                    service_account_email = manager.current_session_data.get('service_account_email')
+
+                    if not auth_method:
+                        return create_error_response(
+                            message.type,
+                            "No credentials configured",
+                            message.request_id
+                        )
+
+                    identity_data = {
+                        'auth_method': auth_method,
+                        'project_id': project_id,
+                        'service_account_email': service_account_email,
+                    }
+
+                    return create_success_response(
+                        message.type,
+                        {'identity': identity_data},
+                        message.request_id
+                    )
+
+                except Exception as e:
+                    logger.error(f"GCP identity error: {e}", exc_info=True)
+                    return create_error_response(
+                        message.type,
+                        f"GCP Error: {str(e)}",
                         message.request_id
                     )
 

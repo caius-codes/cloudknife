@@ -128,7 +128,8 @@ class SessionHandler(BaseHandler):
             # List all session files
             sessions = []
             for session_file in session_dir.glob('*.json'):
-                if session_file.stem.endswith('_enum'):
+                # Skip enumeration files and service account key files
+                if session_file.stem.endswith('_enum') or session_file.stem.endswith('_key'):
                     continue
 
                 try:
@@ -270,6 +271,7 @@ class SessionHandler(BaseHandler):
             # 1. Delete CLI files (so it's deleted from CLI too)
             session_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}.json'
             enum_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}_enum.json'
+            key_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}_key.json'
 
             if session_file.exists():
                 session_file.unlink()
@@ -277,6 +279,9 @@ class SessionHandler(BaseHandler):
             if enum_file.exists():
                 enum_file.unlink()
                 logger.info(f"[SessionDelete] Deleted enumeration file: {enum_file}")
+            if key_file.exists():
+                key_file.unlink()
+                logger.info(f"[SessionDelete] Deleted service account key file: {key_file}")
 
             # 2. Get session manager and delete from memory
             manager = self.session_managers.get(cloud)

@@ -115,8 +115,8 @@ def import_cli_sessions(cloud: str) -> Dict[str, Any]:
 
     # Scan for all session files
     for session_file in sessions_dir.glob("*.json"):
-        # Skip enumeration files
-        if session_file.stem.endswith("_enum"):
+        # Skip enumeration files and service account key files
+        if session_file.stem.endswith("_enum") or session_file.stem.endswith("_key"):
             continue
 
         try:

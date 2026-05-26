@@ -21,6 +21,7 @@ from .handlers.session_handler import SessionHandler
 from .handlers.credential_handler import CredentialHandler
 from .handlers.graph_handler import GraphHandler
 from .handlers.cloud_providers.aws_handler import AWSHandler
+from .handlers.cloud_providers.gcp_handler import GCPHandler
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,14 @@ class WebSocketCommandHandler:
         self.credential_handler = CredentialHandler(broadcast_callback)
         self.graph_handler = GraphHandler(broadcast_callback)
         self.aws_handler = AWSHandler(broadcast_callback)
+        self.gcp_handler = GCPHandler(broadcast_callback)
 
         # Shared state management
         self.graph_state = self.session_handler.graph_state
         self.broadcast_callback = broadcast_callback
 
         # Share state between all handlers
-        for handler in [self.credential_handler, self.graph_handler, self.aws_handler]:
+        for handler in [self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler]:
             handler.graph_state = self.graph_state
             handler.session_managers = self.session_handler.session_managers
 
@@ -213,10 +215,10 @@ class WebSocketCommandHandler:
             # Core handlers
             MessageType.PING: self._handle_ping,
 
-            # Session handlers
-            MessageType.SESSION_CREATE: self.session_handler.handle_session_create,
+            # Session handlers (wrapped to sync state)
+            MessageType.SESSION_CREATE: self._handle_session_create,
             MessageType.SESSION_LIST: self.session_handler.handle_session_list,
-            MessageType.SESSION_SWITCH: self.session_handler.handle_session_switch,
+            MessageType.SESSION_SWITCH: self._handle_session_switch,
             MessageType.SESSION_DELETE: self.session_handler.handle_session_delete,
             MessageType.SESSION_CLEAR_ALL: self.session_handler.handle_session_clear_all,
 
@@ -243,6 +245,50 @@ class WebSocketCommandHandler:
             {},
             message.request_id
         )
+
+    async def _handle_session_create(self, message: WebSocketMessage) -> WebSocketResponse:
+        """
+        Wrapper for session creation that syncs state after creation.
+
+        This ensures that when a session is created, the state is propagated
+        from SessionHandler to WebSocketCommandHandler and all other handlers.
+        """
+        response = await self.session_handler.handle_session_create(message)
+
+        if response.success:
+            # Sync state from SessionHandler to main handler
+            self.current_session = self.session_handler.current_session
+            self.current_session_id = self.session_handler.current_session_id
+            self.current_cloud = self.session_handler.current_cloud
+
+            # Propagate to all other handlers
+            self._sync_session_state()
+
+            logger.info(f"[SessionCreate] State synced: session={self.current_session}, cloud={self.current_cloud}")
+
+        return response
+
+    async def _handle_session_switch(self, message: WebSocketMessage) -> WebSocketResponse:
+        """
+        Wrapper for session switching that syncs state after switch.
+
+        This ensures that when a session is switched, the state is propagated
+        from SessionHandler to WebSocketCommandHandler and all other handlers.
+        """
+        response = await self.session_handler.handle_session_switch(message)
+
+        if response.success:
+            # Sync state from SessionHandler to main handler
+            self.current_session = self.session_handler.current_session
+            self.current_session_id = self.session_handler.current_session_id
+            self.current_cloud = self.session_handler.current_cloud
+
+            # Propagate to all other handlers
+            self._sync_session_state()
+
+            logger.info(f"[SessionSwitch] State synced: session={self.current_session}, cloud={self.current_cloud}")
+
+        return response
 
     # ==================== Module Execution ====================
 
@@ -394,11 +440,25 @@ class WebSocketCommandHandler:
                         f"Unknown AWS module: {module_id}"
                     )
             elif self.current_cloud == 'gcp':
-                # TODO: Implement GCP handler delegation
-                await self._broadcast_module_error(
-                    execution_id,
-                    f"Modules not yet implemented for GCP"
-                )
+                # Strip gcp_ prefix if present for backward compatibility
+                module_name = module_id.replace('gcp_', '') if module_id.startswith('gcp_') else module_id
+
+                # Delegate to GCP handler
+                if module_name == 'enumerate_compute':
+                    await self.gcp_handler._run_gcp_enumerate_compute(execution_id, params)
+                elif module_name == 'enumerate_storage':
+                    await self.gcp_handler._run_gcp_enumerate_storage(execution_id, params)
+                elif module_name == 'enumerate_iam':
+                    await self.gcp_handler._run_gcp_enumerate_iam(execution_id, params)
+                elif module_name == 'enumerate_secrets':
+                    await self.gcp_handler._run_gcp_enumerate_secrets(execution_id, params)
+                elif module_name == 'quick_enum':
+                    await self.gcp_handler._run_gcp_quick_enum(execution_id, params)
+                else:
+                    await self._broadcast_module_error(
+                        execution_id,
+                        f"Unknown GCP module: {module_id}"
+                    )
             elif self.current_cloud == 'azure':
                 # TODO: Implement Azure handler delegation
                 await self._broadcast_module_error(
@@ -417,7 +477,7 @@ class WebSocketCommandHandler:
 
     def _sync_session_state(self):
         """Synchronize current session state across all handlers."""
-        for handler in [self.session_handler, self.credential_handler, self.graph_handler, self.aws_handler]:
+        for handler in [self.session_handler, self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler]:
             handler.current_session = self.current_session
             handler.current_session_id = self.current_session_id
             handler.current_cloud = self.current_cloud

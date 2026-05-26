@@ -53,11 +53,11 @@ class SessionFileWatcher(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        # Only process .json session files (not _enum.json)
+        # Only process .json session files (not _enum.json or _key.json)
         file_path = Path(event.src_path)
         if not file_path.name.endswith('.json'):
             return
-        if file_path.name.endswith('_enum.json'):
+        if file_path.name.endswith('_enum.json') or file_path.name.endswith('_key.json'):
             return
 
         # Extract session name from filename
@@ -82,11 +82,11 @@ class SessionFileWatcher(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        # Only process .json session files (not _enum.json)
+        # Only process .json session files (not _enum.json or _key.json)
         file_path = Path(event.src_path)
         if not file_path.name.endswith('.json'):
             return
-        if file_path.name.endswith('_enum.json'):
+        if file_path.name.endswith('_enum.json') or file_path.name.endswith('_key.json'):
             return
 
         # Extract session name from filename
