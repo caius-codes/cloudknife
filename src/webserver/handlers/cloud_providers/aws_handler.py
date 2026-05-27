@@ -2989,6 +2989,60 @@ class AWSHandler(BaseHandler):
         logger.info(f"[Module] Created {len(functions)} Lambda function nodes")
 
 
+    async def _update_lambda_node(
+        self,
+        node_identifier: str,
+        details: dict
+    ) -> None:
+        """Update an existing Lambda node with detailed information."""
+        if not self.broadcast_callback:
+            logger.warning(f"[Module] Cannot update Lambda node - no broadcast callback")
+            return
+
+        from datetime import datetime
+        logger.info(f"[Module] Updating Lambda node: {node_identifier}")
+
+        # Create update payload with detailed information
+        node_update = {
+            'id': node_identifier,
+            'type': 'aws-lambda',
+            'data': {
+                'detailedInfoFetched': True,
+                'configuration': details.get('Configuration', {}),
+                'code': details.get('Code', {}),
+                'tags': details.get('Tags', {}),
+                'concurrency': details.get('Concurrency', {}),
+                'environment': details.get('Configuration', {}).get('Environment', {}),
+                'layers': details.get('Configuration', {}).get('Layers', []),
+                'vpcConfig': details.get('Configuration', {}).get('VpcConfig', {}),
+                'deadLetterConfig': details.get('Configuration', {}).get('DeadLetterConfig', {}),
+            },
+            'metadata': {
+                'lastDetailedFetch': datetime.now().isoformat(),
+            }
+        }
+
+        # Update node in graph state
+        for i, node in enumerate(self.graph_state['nodes']):
+            if node['id'] == node_identifier or node.get('data', {}).get('functionName') == node_identifier:
+                # Deep merge the update into existing node
+                self.graph_state['nodes'][i]['data'].update(node_update['data'])
+                self.graph_state['nodes'][i]['metadata'].update(node_update['metadata'])
+                logger.info(f"[Module] Updated Lambda node in graph state: {node_identifier}")
+                break
+
+        # Broadcast node update
+        logger.info(f"[Module] Broadcasting Lambda node update")
+        await self.broadcast_callback(
+            create_success_response(
+                'graph.node.update',
+                {'node': node_update}
+            )
+        )
+
+        logger.info(f"[Module] Broadcasted Lambda details update for node: {node_identifier}")
+
+
     async def _create_mq_nodes(self, brokers: list) -> None:
         """Create graph nodes for Amazon MQ brokers."""
         import asyncio
