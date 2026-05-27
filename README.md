@@ -105,6 +105,18 @@ python -m src.cli    # Direct module execution
 
 **Note:** Azure no longer requires Azure CLI. All operations use native Azure SDKs for improved performance and reliability.
 
+### Troubleshooting GCP Service Account Keys
+
+If you get "Invalid private key" errors when loading a GCP service account JSON key, the `private_key` field may be malformed (missing newlines). Use the included utility script to fix it:
+
+```bash
+python fix_sa_key.py path/to/key.json
+# Or save to a different file:
+python fix_sa_key.py key.json --output fixed-key.json
+```
+
+This ensures the private key has proper PEM formatting with newlines every 64 characters.
+
 ### Terminal Icons (Optional)
 
 CloudKnife displays cloud provider icons in the CLI prompt for better visual distinction. **Icons are rendered in bold** for increased prominence. By default, it uses Unicode emoji (⚡ for AWS, 🔴 for GCP, 🔷 for Azure) which work on all modern terminals.
