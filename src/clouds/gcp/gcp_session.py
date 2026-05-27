@@ -41,7 +41,8 @@ class GCPSessionManager(SessionManager):
         self._credentials = None  # Clear cache on session switch
 
         self.current_session_data.setdefault("auth_method", None)
-        self.current_session_data.setdefault("service_account_file", None)
+        self.current_session_data.setdefault("service_account_file", None)  # Kept for backward compatibility
+        self.current_session_data.setdefault("service_account_json", None)  # New: stores SA JSON directly (like AWS)
         self.current_session_data.setdefault("access_token", None)
         self.current_session_data.setdefault("project_id", None)
         self.current_session_data.setdefault("projects", [])
@@ -90,9 +91,23 @@ class GCPSessionManager(SessionManager):
             if key_data.get("type") != "service_account":
                 return False
 
+            # Validate that the private key is properly formatted
+            try:
+                # Test that the key can be loaded (this will catch malformed keys)
+                service_account.Credentials.from_service_account_info(
+                    key_data,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+            except ValueError as e:
+                self.console.print(f"\n[red]✗ Invalid service account key:[/red] {str(e)}")
+                self.console.print("[yellow]The private_key field in the JSON is malformed.[/yellow]")
+                self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n) between lines.[/dim]\n")
+                return False
+
             # Store configuration
             self.current_session_data["auth_method"] = "service_account"
-            self.current_session_data["service_account_file"] = str(path)
+            self.current_session_data["service_account_file"] = str(path)  # Kept for backward compatibility
+            self.current_session_data["service_account_json"] = key_data  # Store JSON directly (like AWS stores keys)
             self.current_session_data["service_account_email"] = key_data.get("client_email")
 
             # Handle project_id
@@ -169,6 +184,7 @@ class GCPSessionManager(SessionManager):
 
             self.current_session_data["auth_method"] = "adc"
             self.current_session_data["service_account_file"] = None
+            self.current_session_data["service_account_json"] = None
             self.current_session_data["project_id"] = project
 
             # Try to get service account email if available
@@ -218,6 +234,7 @@ class GCPSessionManager(SessionManager):
         self.current_session_data["auth_method"] = "access_token"
         self.current_session_data["access_token"] = token
         self.current_session_data["service_account_file"] = None
+        self.current_session_data["service_account_json"] = None
 
         if project_id:
             self.current_session_data["project_id"] = project_id
@@ -335,16 +352,41 @@ class GCPSessionManager(SessionManager):
         auth_method = self.current_session_data.get("auth_method")
 
         if auth_method == "service_account":
+            # Try JSON from session_data first (new method, like AWS)
+            sa_json = self.current_session_data.get("service_account_json")
+            if sa_json:
+                try:
+                    credentials = service_account.Credentials.from_service_account_info(
+                        sa_json,
+                        scopes=scopes,
+                    )
+                    # Cache only if using default scopes
+                    if scopes == ["https://www.googleapis.com/auth/cloud-platform"]:
+                        self._credentials = credentials
+                    return credentials
+                except ValueError as e:
+                    self.console.print(f"\n[red]✗ Invalid service account credentials:[/red] {str(e)}")
+                    self.console.print("[yellow]The service account JSON key is malformed.[/yellow]")
+                    self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
+                    return None
+
+            # Fallback to file path (backward compatibility with existing sessions)
             key_file = self.current_session_data.get("service_account_file")
             if key_file and Path(key_file).exists():
-                credentials = service_account.Credentials.from_service_account_file(
-                    key_file,
-                    scopes=scopes,
-                )
-                # Cache only if using default scopes
-                if scopes == ["https://www.googleapis.com/auth/cloud-platform"]:
-                    self._credentials = credentials
-                return credentials
+                try:
+                    credentials = service_account.Credentials.from_service_account_file(
+                        key_file,
+                        scopes=scopes,
+                    )
+                    # Cache only if using default scopes
+                    if scopes == ["https://www.googleapis.com/auth/cloud-platform"]:
+                        self._credentials = credentials
+                    return credentials
+                except ValueError as e:
+                    self.console.print(f"\n[red]✗ Invalid service account key file:[/red] {str(e)}")
+                    self.console.print(f"[yellow]The key file at {key_file} is malformed.[/yellow]")
+                    self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
+                    return None
 
         elif auth_method == "adc":
             try:
