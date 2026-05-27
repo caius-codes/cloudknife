@@ -1772,7 +1772,13 @@ def _show_config(session_mgr: GCPSessionManager) -> None:
     table.add_row("Auth Method", data.get("auth_method") or "[red]Not configured[/red]")
 
     if data.get("auth_method") == "service_account":
-        table.add_row("SA Key File", data.get("service_account_file", "N/A"))
+        # Display storage location (session data vs file path)
+        if data.get("service_account_json"):
+            table.add_row("SA Key Storage", "Session data")
+        elif data.get("service_account_file"):
+            table.add_row("SA Key File", data.get("service_account_file"))
+        else:
+            table.add_row("SA Key Storage", "N/A")
         table.add_row("Service Account", data.get("service_account_email", "N/A"))
     elif data.get("auth_method") == "adc":
         table.add_row("Auth Source", "Application Default Credentials")
@@ -1843,7 +1849,13 @@ def _whoami(session_mgr: GCPSessionManager) -> None:
     if auth_method == "service_account":
         id_table.add_row("Auth Method", "[green]Service Account Key[/green]")
         id_table.add_row("Service Account", data.get("service_account_email", "N/A"))
-        id_table.add_row("Key File", data.get("service_account_file", "N/A"))
+        # Display storage location (session data vs file path)
+        if data.get("service_account_json"):
+            id_table.add_row("Key Storage", "Session data")
+        elif data.get("service_account_file"):
+            id_table.add_row("Key File", data.get("service_account_file"))
+        else:
+            id_table.add_row("Key Storage", "N/A")
     elif auth_method == "adc":
         id_table.add_row("Auth Method", "[cyan]Application Default Credentials[/cyan]")
         sa_email = data.get("service_account_email")

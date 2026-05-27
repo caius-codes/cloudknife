@@ -271,6 +271,8 @@ class SessionHandler(BaseHandler):
             # 1. Delete CLI files (so it's deleted from CLI too)
             session_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}.json'
             enum_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}_enum.json'
+            # Note: _key.json files are legacy - new sessions store SA JSON in session_data (like AWS)
+            # but we still check and delete them for backward compatibility
             key_file = Path.home() / '.cloudknife' / 'sessions' / cloud / f'{session_name}_key.json'
 
             if session_file.exists():
@@ -281,7 +283,7 @@ class SessionHandler(BaseHandler):
                 logger.info(f"[SessionDelete] Deleted enumeration file: {enum_file}")
             if key_file.exists():
                 key_file.unlink()
-                logger.info(f"[SessionDelete] Deleted service account key file: {key_file}")
+                logger.info(f"[SessionDelete] Deleted legacy service account key file: {key_file}")
 
             # 2. Get session manager and delete from memory
             manager = self.session_managers.get(cloud)

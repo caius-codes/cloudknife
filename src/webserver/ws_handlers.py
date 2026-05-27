@@ -226,6 +226,7 @@ class WebSocketCommandHandler:
             MessageType.CREDS_SET_KEYS: self.credential_handler.handle_creds_set_keys,
             MessageType.CREDS_WHOAMI: self.credential_handler.handle_creds_whoami,
             MessageType.SET_REGION: self.credential_handler.handle_set_region,
+            MessageType.SET_PROJECT: self.credential_handler.handle_set_project,
 
             # Graph handlers
             MessageType.GRAPH_SYNC: self.graph_handler.handle_graph_sync,
@@ -454,6 +455,16 @@ class WebSocketCommandHandler:
                     await self.gcp_handler._run_gcp_enumerate_secrets(execution_id, params)
                 elif module_name == 'quick_enum':
                     await self.gcp_handler._run_gcp_quick_enum(execution_id, params)
+                elif module_name == 'enumerate_artifact_repositories':
+                    await self.gcp_handler._run_gcp_enumerate_artifact_repositories(execution_id, params)
+                elif module_name == 'enumerate_artifact_packages':
+                    await self.gcp_handler._run_gcp_enumerate_artifact_packages(execution_id, params)
+                elif module_name == 'enumerate_artifact_versions':
+                    await self.gcp_handler._run_gcp_enumerate_artifact_versions(execution_id, params)
+                elif module_name == 'describe_role':
+                    await self.gcp_handler._run_gcp_describe_role(execution_id, params)
+                elif module_name == 'describe_service_account_iam_policy':
+                    await self.gcp_handler._run_gcp_describe_service_account_iam_policy(execution_id, params)
                 else:
                     await self._broadcast_module_error(
                         execution_id,

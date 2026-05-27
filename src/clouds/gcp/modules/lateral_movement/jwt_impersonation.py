@@ -591,10 +591,15 @@ def generate_signed_jwt(
         # Try to load SA key from session (for local signing)
         auth_method = session_mgr.current_session_data.get("auth_method")
         if auth_method == "service_account":
-            sa_key_path = session_mgr.current_session_data.get("service_account_file")
-            if sa_key_path and Path(sa_key_path).exists():
-                with open(sa_key_path, "r") as f:
-                    sa_key = json.load(f)
+            # Try to get SA JSON from session_data first (new method)
+            sa_key = session_mgr.current_session_data.get("service_account_json")
+
+            # Fallback to file if JSON not in session_data (backward compatibility)
+            if not sa_key:
+                sa_key_path = session_mgr.current_session_data.get("service_account_file")
+                if sa_key_path and Path(sa_key_path).exists():
+                    with open(sa_key_path, "r") as f:
+                        sa_key = json.load(f)
 
     if not target_sa_email:
         console.print("[red]Could not determine target service account email[/red]")

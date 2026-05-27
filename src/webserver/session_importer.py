@@ -209,14 +209,32 @@ def _create_session_object(session_name: str, session_data: Dict[str, Any], clou
 
 def _create_session_node(session_name: str, session_data: Dict[str, Any], cloud: str) -> Dict[str, Any]:
     """Create a graph node for a session."""
-    # Build identity object matching whoami response format
+    # Build identity object matching whoami response format for each cloud provider
     identity = None
-    if session_data.get('arn'):
+    metadata = {
+        'discoveredAt': datetime.now().isoformat(),
+        'moduleUsed': 'cli_import',
+    }
+
+    if cloud == 'aws' and session_data.get('arn'):
+        # AWS identity
         identity = {
             'UserId': session_data.get('user_id', ''),
             'Account': session_data.get('account', ''),
             'Arn': session_data.get('arn', ''),
         }
+        metadata['arn'] = session_data.get('arn', '')
+
+    elif cloud == 'gcp' and session_data.get('service_account_email'):
+        # GCP identity
+        identity = {
+            'auth_method': session_data.get('auth_method', ''),
+            'project_id': session_data.get('project_id', ''),
+            'service_account_email': session_data.get('service_account_email', ''),
+        }
+        metadata['project_id'] = session_data.get('project_id', '')
+        metadata['service_account_email'] = session_data.get('service_account_email', '')
+        metadata['auth_method'] = session_data.get('auth_method', '')
 
     # Use CLI's session_id as the node ID for consistency
     session_uuid = session_data.get('session_id', f'session-{session_name}')
@@ -231,14 +249,10 @@ def _create_session_node(session_name: str, session_data: Dict[str, Any], cloud:
         'data': {
             'sessionName': session_name,
             'sessionId': session_uuid,
-            'identity': identity,  # AWS whoami identity
+            'identity': identity,  # Cloud-specific identity
             'createdAt': datetime.now().isoformat(),
         },
-        'metadata': {
-            'discoveredAt': datetime.now().isoformat(),
-            'moduleUsed': 'cli_import',
-            'arn': session_data.get('arn', ''),
-        },
+        'metadata': metadata,
         'level': 0,
     }
 

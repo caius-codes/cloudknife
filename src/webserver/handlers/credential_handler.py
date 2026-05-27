@@ -126,44 +126,36 @@ class CredentialHandler(BaseHandler):
                         'ConfiguredRegions': list(manager.configured_regions) if manager.configured_regions else []
                     }
 
-                    # Broadcast graph node UPDATE with identity information
-                    if self.broadcast_callback:
-                        # Update existing session node with identity (don't create a new one)
-                        session_node = {
-                            'id': self.current_session_id,  # Use UUID instead of name-based ID
-                            'type': 'aws-session',
-                            'label': self.current_session,
-                            'provider': 'aws',
-                            'discoveredBy': [self.current_session_id],
-                            'parentId': None,
-                            'data': {
-                                'sessionName': self.current_session,
-                                'sessionId': self.current_session_id,
-                                'identity': identity_data,
-                                'credentials': {
-                                    'configured': True,
-                                    'region': manager.default_region,
-                                }
-                            },
-                            'metadata': {
-                                'discoveredAt': datetime.now().isoformat(),
-                                'moduleUsed': 'set_credentials',
-                                'arn': identity['Arn'],
-                                'account': identity['Account'],
-                                'userId': identity['UserId'],
-                            },
-                            'level': 0,
-                        }
+                    # Update graph node with identity information
+                    # This updates both graph_state and broadcasts to clients
+                    session_node = {
+                        'id': self.current_session_id,  # Use UUID instead of name-based ID
+                        'type': 'aws-session',
+                        'label': self.current_session,
+                        'provider': 'aws',
+                        'discoveredBy': [self.current_session_id],
+                        'parentId': None,
+                        'data': {
+                            'sessionName': self.current_session,
+                            'sessionId': self.current_session_id,
+                            'identity': identity_data,
+                            'credentials': {
+                                'configured': True,
+                                'region': manager.default_region,
+                            }
+                        },
+                        'metadata': {
+                            'discoveredAt': datetime.now().isoformat(),
+                            'moduleUsed': 'set_credentials',
+                            'arn': identity['Arn'],
+                            'account': identity['Account'],
+                            'userId': identity['UserId'],
+                        },
+                        'level': 0,
+                    }
 
-                        # Broadcast UPDATE (not add) to all clients
-                        asyncio.create_task(
-                            self.broadcast_callback(
-                                create_success_response(
-                                    'graph.node.update',  # UPDATE instead of ADD
-                                    {'node': session_node}
-                                )
-                            )
-                        )
+                    # Use _add_or_update_node to update graph_state AND broadcast
+                    await self._add_or_update_node(session_node)
 
                     # Prepare success message
                     success_msg = 'AWS credentials updated successfully (overridden)' if had_credentials else 'AWS credentials set successfully'
@@ -278,38 +270,44 @@ class CredentialHandler(BaseHandler):
                     else:
                         logger.info(f"[SetKeys GCP] Using project_id from JSON: {service_account_json['project_id']}")
 
-                    # Write JSON to permanent file in session directory (not temp file!)
-                    # This allows the CLI to read credentials from the same session
-                    from pathlib import Path
-                    sessions_base = Path.home() / '.cloudknife' / 'sessions' / 'gcp'
-                    sessions_base.mkdir(parents=True, exist_ok=True)
-
-                    key_file_path = sessions_base / f"{self.current_session}_key.json"
+                    # Write JSON to temporary file for validation, then store in session_data (like AWS)
+                    # This allows the CLI to read credentials from session data without needing a separate file
+                    import tempfile
 
                     try:
-                        # Write service account JSON to permanent file
-                        with open(key_file_path, 'w') as f:
-                            json.dump(service_account_json, f, indent=2)
+                        # Create temporary file for validation only
+                        fd, temp_path = tempfile.mkstemp(suffix='.json')
+                        with os.fdopen(fd, 'w') as f:
+                            json.dump(service_account_json, f)
 
-                        # Set restrictive permissions (only owner can read/write)
-                        os.chmod(key_file_path, 0o600)
+                        os.chmod(temp_path, 0o600)
 
-                        logger.info(f"[SetKeys GCP] Saved service account key to: {key_file_path}")
                         logger.info(f"[SetKeys GCP] Calling manager.set_service_account() with project_id: {service_account_json.get('project_id')}")
 
-                        # Set service account (now with project_id, so no interactive prompt)
-                        success = manager.set_service_account(str(key_file_path))
+                        # Call set_service_account() which will:
+                        # 1. Validate the JSON
+                        # 2. Save service_account_json to session_data (new behavior)
+                        # 3. Save service_account_file path for backward compatibility
+                        success = manager.set_service_account(temp_path)
                         auth_method = 'service_account'
 
                         logger.info(f"[SetKeys GCP] set_service_account returned: {success}")
-                    except Exception as e:
-                        logger.error(f"[SetKeys GCP] Error writing/processing service account JSON: {e}", exc_info=True)
-                        # Clean up key file if something went wrong
+
+                        # Clean up temporary file (no longer needed - JSON is in session_data)
                         try:
-                            if key_file_path.exists():
-                                key_file_path.unlink()
+                            os.unlink(temp_path)
                         except Exception:
                             pass
+
+                        if success:
+                            # Update session_data to clear the temp file path (we don't want to keep it)
+                            # The service_account_json field has the actual credentials
+                            manager.current_session_data["service_account_file"] = None
+                            manager.save_current_session()
+                            logger.info(f"[SetKeys GCP] Service account JSON saved to session_data")
+
+                    except Exception as e:
+                        logger.error(f"[SetKeys GCP] Error processing service account JSON: {e}", exc_info=True)
                         return create_error_response(
                             message.type,
                             f"Failed to process service account JSON: {str(e)}",
@@ -358,43 +356,36 @@ class CredentialHandler(BaseHandler):
                     logger.warning(f"[SetKeys GCP] Failed to get token info: {e}")
                     # Continue anyway - credentials might still work
 
-                # Broadcast graph node UPDATE with identity information
-                if self.broadcast_callback:
-                    session_node = {
-                        'id': self.current_session_id,
-                        'type': 'gcp-session',
-                        'label': self.current_session,
-                        'provider': 'gcp',
-                        'discoveredBy': [self.current_session_id],
-                        'parentId': None,
-                        'data': {
-                            'sessionName': self.current_session,
-                            'sessionId': self.current_session_id,
-                            'identity': identity_data,
-                            'credentials': {
-                                'configured': True,
-                                'auth_method': auth_method,
-                            }
-                        },
-                        'metadata': {
-                            'discoveredAt': datetime.now().isoformat(),
-                            'moduleUsed': 'set_credentials',
-                            'project_id': project_id,
-                            'service_account_email': service_account_email,
+                # Update graph node with identity information
+                # This updates both graph_state and broadcasts to clients
+                session_node = {
+                    'id': self.current_session_id,
+                    'type': 'gcp-session',
+                    'label': self.current_session,
+                    'provider': 'gcp',
+                    'discoveredBy': [self.current_session_id],
+                    'parentId': None,
+                    'data': {
+                        'sessionName': self.current_session,
+                        'sessionId': self.current_session_id,
+                        'identity': identity_data,
+                        'credentials': {
+                            'configured': True,
                             'auth_method': auth_method,
-                        },
-                        'level': 0,
-                    }
+                        }
+                    },
+                    'metadata': {
+                        'discoveredAt': datetime.now().isoformat(),
+                        'moduleUsed': 'set_credentials',
+                        'project_id': project_id,
+                        'service_account_email': service_account_email,
+                        'auth_method': auth_method,
+                    },
+                    'level': 0,
+                }
 
-                    # Broadcast UPDATE to all clients
-                    asyncio.create_task(
-                        self.broadcast_callback(
-                            create_success_response(
-                                'graph.node.update',
-                                {'node': session_node}
-                            )
-                        )
-                    )
+                # Use _add_or_update_node to update graph_state AND broadcast
+                await self._add_or_update_node(session_node)
 
                 return create_success_response(
                     message.type,
@@ -475,42 +466,35 @@ class CredentialHandler(BaseHandler):
                         'ConfiguredRegions': list(manager.configured_regions) if manager.configured_regions else []
                     }
 
-                    # Broadcast graph node update with identity information
-                    if self.broadcast_callback:
-                        session_node = {
-                            'id': self.current_session_id,
-                            'type': 'aws-session',
-                            'label': self.current_session,
-                            'provider': 'aws',
-                            'discoveredBy': [self.current_session_id],
-                            'parentId': None,
-                            'data': {
-                                'sessionName': self.current_session,
-                                'identity': identity_data,
-                                'credentials': {
-                                    'configured': True,
-                                    'region': manager.default_region,
-                                }
-                            },
-                            'metadata': {
-                                'discoveredAt': datetime.now().isoformat(),
-                                'moduleUsed': 'whoami',
-                                'arn': identity['Arn'],
-                                'account': identity['Account'],
-                                'userId': identity['UserId'],
-                            },
-                            'level': 0,
-                        }
+                    # Update graph node with identity information
+                    # This updates both graph_state and broadcasts to clients
+                    session_node = {
+                        'id': self.current_session_id,
+                        'type': 'aws-session',
+                        'label': self.current_session,
+                        'provider': 'aws',
+                        'discoveredBy': [self.current_session_id],
+                        'parentId': None,
+                        'data': {
+                            'sessionName': self.current_session,
+                            'identity': identity_data,
+                            'credentials': {
+                                'configured': True,
+                                'region': manager.default_region,
+                            }
+                        },
+                        'metadata': {
+                            'discoveredAt': datetime.now().isoformat(),
+                            'moduleUsed': 'whoami',
+                            'arn': identity['Arn'],
+                            'account': identity['Account'],
+                            'userId': identity['UserId'],
+                        },
+                        'level': 0,
+                    }
 
-                        # Broadcast to all clients
-                        asyncio.create_task(
-                            self.broadcast_callback(
-                                create_success_response(
-                                    'graph.node.add',
-                                    {'node': session_node}
-                                )
-                            )
-                        )
+                    # Use _add_or_update_node to update graph_state AND broadcast
+                    await self._add_or_update_node(session_node)
 
                     return create_success_response(
                         message.type,
@@ -635,4 +619,67 @@ class CredentialHandler(BaseHandler):
 
         except Exception as e:
             logger.error(f"Set region failed: {e}", exc_info=True)
+            return create_error_response(message.type, str(e), message.request_id)
+
+    async def handle_set_project(self, message: WebSocketMessage) -> WebSocketResponse:
+        """
+        Set default project for the current GCP session.
+
+        Args:
+            message: WebSocket message containing project_id to set
+
+        Returns:
+            WebSocketResponse with updated project information
+        """
+        try:
+            payload = message.payload
+            project_id = payload.get('project_id')
+
+            if not project_id:
+                return create_error_response(
+                    message.type,
+                    "Missing required field: project_id",
+                    message.request_id
+                )
+
+            if not self.current_session or not self.current_cloud:
+                return create_error_response(
+                    message.type,
+                    "No active session. Create or switch to a session first.",
+                    message.request_id
+                )
+
+            if self.current_cloud != 'gcp':
+                return create_error_response(
+                    message.type,
+                    "set_project is only available for GCP sessions",
+                    message.request_id
+                )
+
+            # Get GCP session manager
+            manager = self.session_managers.get(self.current_cloud)
+            if not manager:
+                return create_error_response(
+                    message.type,
+                    "Session manager not initialized",
+                    message.request_id
+                )
+
+            # Use CLI's set_project method
+            manager.set_project(project_id)
+
+            logger.info(f"[SetProject] Changed default project to: {project_id} for session: {self.current_session}")
+
+            return create_success_response(
+                message.type,
+                {
+                    'project_id': project_id,
+                    'session': self.current_session,
+                    'message': f'Default project set to {project_id}'
+                },
+                message.request_id
+            )
+
+        except Exception as e:
+            logger.error(f"Set project failed: {e}", exc_info=True)
             return create_error_response(message.type, str(e), message.request_id)

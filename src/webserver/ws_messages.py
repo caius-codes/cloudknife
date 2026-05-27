@@ -27,8 +27,9 @@ class MessageType(str, Enum):
     CREDS_SET_SSO_INTERACTIVE = "creds.set_sso_interactive"
     CREDS_WHOAMI = "creds.whoami"
 
-    # Region Configuration
+    # Region/Project Configuration
     SET_REGION = "session.set_region"
+    SET_PROJECT = "session.set_project"
 
     # Module Execution
     MODULE_RUN = "module.run"
