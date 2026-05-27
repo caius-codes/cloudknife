@@ -99,9 +99,11 @@ class GCPSessionManager(SessionManager):
                     scopes=["https://www.googleapis.com/auth/cloud-platform"],
                 )
             except ValueError as e:
-                self.console.print(f"\n[red]✗ Invalid service account key:[/red] {str(e)}")
-                self.console.print("[yellow]The private_key field in the JSON is malformed.[/yellow]")
-                self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n) between lines.[/dim]\n")
+                from rich.console import Console
+                console = Console()
+                console.print(f"\n[red]✗ Invalid service account key:[/red] {str(e)}")
+                console.print("[yellow]The private_key field in the JSON is malformed.[/yellow]")
+                console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n) between lines.[/dim]\n")
                 return False
 
             # Store configuration
@@ -365,9 +367,11 @@ class GCPSessionManager(SessionManager):
                         self._credentials = credentials
                     return credentials
                 except ValueError as e:
-                    self.console.print(f"\n[red]✗ Invalid service account credentials:[/red] {str(e)}")
-                    self.console.print("[yellow]The service account JSON key is malformed.[/yellow]")
-                    self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
+                    from rich.console import Console
+                    console = Console()
+                    console.print(f"\n[red]✗ Invalid service account credentials:[/red] {str(e)}")
+                    console.print("[yellow]The service account JSON key is malformed.[/yellow]")
+                    console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
                     return None
 
             # Fallback to file path (backward compatibility with existing sessions)
@@ -383,9 +387,11 @@ class GCPSessionManager(SessionManager):
                         self._credentials = credentials
                     return credentials
                 except ValueError as e:
-                    self.console.print(f"\n[red]✗ Invalid service account key file:[/red] {str(e)}")
-                    self.console.print(f"[yellow]The key file at {key_file} is malformed.[/yellow]")
-                    self.console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
+                    from rich.console import Console
+                    console = Console()
+                    console.print(f"\n[red]✗ Invalid service account key file:[/red] {str(e)}")
+                    console.print(f"[yellow]The key file at {key_file} is malformed.[/yellow]")
+                    console.print("[dim]Hint: Check that the private_key field has proper newlines (\\n).[/dim]\n")
                     return None
 
         elif auth_method == "adc":
