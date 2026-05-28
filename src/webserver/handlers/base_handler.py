@@ -101,6 +101,7 @@ class BaseHandler:
             node: Node data with 'id' field
         """
         node_id = node.get('id')
+
         if not node_id:
             logger.warning("[Graph] Cannot add node without ID")
             return

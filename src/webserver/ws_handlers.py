@@ -465,6 +465,8 @@ class WebSocketCommandHandler:
                     await self.gcp_handler._run_gcp_describe_role(execution_id, params)
                 elif module_name == 'describe_service_account_iam_policy':
                     await self.gcp_handler._run_gcp_describe_service_account_iam_policy(execution_id, params)
+                elif module_name == 'bruteforce_permissions':
+                    await self.gcp_handler._run_gcp_bruteforce_permissions(execution_id, params)
                 else:
                     await self._broadcast_module_error(
                         execution_id,
