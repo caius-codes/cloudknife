@@ -14,7 +14,7 @@ Supports authentication via:
 - Raw access token (via REST API)
 """
 
-from typing import List, Dict, Any, TYPE_CHECKING
+from typing import List, Dict, Any, TYPE_CHECKING, Optional
 
 import requests
 from rich.console import Console
@@ -32,14 +32,15 @@ console = Console()
 GCS_API_BASE = "https://storage.googleapis.com/storage/v1"
 
 
-def enumerate_storage_buckets(session_mgr: "GCPSessionManager") -> List[Dict[str, Any]]:
+def enumerate_storage_buckets(session_mgr: "GCPSessionManager", bucket_name: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Enumerate all Cloud Storage buckets across configured projects.
+    Enumerate Cloud Storage buckets.
 
     Uses REST API for access_token auth, client library for service_account/ADC.
 
     Args:
         session_mgr: GCP session manager with valid credentials
+        bucket_name: Optional specific bucket name to analyze. If None, lists all buckets across all projects.
 
     Returns:
         List of bucket dictionaries with detailed metadata
@@ -49,30 +50,48 @@ def enumerate_storage_buckets(session_mgr: "GCPSessionManager") -> List[Dict[str
         console.print("[red]No credentials configured. Use 'set_credentials' first.[/red]")
         return []
 
-    projects = resolve_projects(session_mgr)
-    if not projects:
-        console.print("[red]No projects accessible. Check credentials or set a project.[/red]")
-        return []
-
     auth_method = session_mgr.current_session_data.get("auth_method")
     all_buckets: List[Dict[str, Any]] = []
 
-    for project in projects:
-        console.print(f"[dim]Scanning project: {project}[/dim]")
-
+    # If specific bucket name provided, analyze only that bucket
+    if bucket_name:
+        console.print(f"[bold]Analyzing specific Cloud Storage bucket: {bucket_name}[/bold]")
         try:
             if auth_method == "access_token":
-                # Use REST API for access_token auth
-                buckets = _enumerate_buckets_rest_api(session_mgr, project)
+                bucket_info = _get_bucket_rest_api(session_mgr, bucket_name)
             else:
-                # Use client library for service_account/ADC
-                buckets = _enumerate_buckets_client_lib(session_mgr, project, credentials)
+                bucket_info = _get_bucket_client_lib(session_mgr, bucket_name, credentials)
 
-            all_buckets.extend(buckets)
-
+            if bucket_info:
+                all_buckets.append(bucket_info)
         except Exception as e:
-            console.print(f"[dim red]Error scanning project {project}: {str(e)}[/dim red]")
-            continue
+            console.print(f"[red]Error analyzing bucket {bucket_name}: {str(e)}[/red]")
+            return []
+    else:
+        # No specific bucket - enumerate all buckets across projects
+        console.print("[bold]Enumerating all Cloud Storage buckets...[/bold]")
+
+        projects = resolve_projects(session_mgr)
+        if not projects:
+            console.print("[red]No projects accessible. Check credentials or set a project.[/red]")
+            return []
+
+        for project in projects:
+            console.print(f"[dim]Scanning project: {project}[/dim]")
+
+            try:
+                if auth_method == "access_token":
+                    # Use REST API for access_token auth
+                    buckets = _enumerate_buckets_rest_api(session_mgr, project)
+                else:
+                    # Use client library for service_account/ADC
+                    buckets = _enumerate_buckets_client_lib(session_mgr, project, credentials)
+
+                all_buckets.extend(buckets)
+
+            except Exception as e:
+                console.print(f"[dim red]Error scanning project {project}: {str(e)}[/dim red]")
+                continue
 
     # Save enumeration results
     session_mgr.save_enumeration_data("storage_buckets", all_buckets)
@@ -81,6 +100,166 @@ def enumerate_storage_buckets(session_mgr: "GCPSessionManager") -> List[Dict[str
     _display_buckets_table(all_buckets)
 
     return all_buckets
+
+
+def _get_bucket_rest_api(
+    session_mgr: "GCPSessionManager", bucket_name: str
+) -> Optional[Dict[str, Any]]:
+    """Get single bucket metadata using REST API (for access_token auth)."""
+    token = session_mgr.current_session_data.get("access_token")
+    if not token:
+        return None
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Get bucket metadata
+    url = f"{GCS_API_BASE}/b/{bucket_name}"
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            console.print(f"[red]Failed to get bucket {bucket_name}: HTTP {response.status_code}[/red]")
+            return None
+
+        item = response.json()
+
+        # Get IAM policy for the bucket
+        is_public = False
+        iam_bindings = []
+        try:
+            iam_url = f"{GCS_API_BASE}/b/{bucket_name}/iam"
+            iam_response = requests.get(iam_url, headers=headers, timeout=30)
+            if iam_response.status_code == 200:
+                policy = iam_response.json()
+                for binding in policy.get("bindings", []):
+                    iam_bindings.append({
+                        "role": binding.get("role"),
+                        "members": binding.get("members", []),
+                    })
+                    # Check for public access
+                    members = binding.get("members", [])
+                    if "allUsers" in members or "allAuthenticatedUsers" in members:
+                        is_public = True
+        except Exception:
+            pass
+
+        # Extract IAM configuration
+        iam_config = item.get("iamConfiguration", {})
+        public_access_prevention = iam_config.get("publicAccessPrevention", "inherited")
+        uniform_access = iam_config.get("uniformBucketLevelAccess", {}).get("enabled", False)
+
+        # Extract lifecycle rules
+        lifecycle_rules = []
+        lifecycle = item.get("lifecycle", {})
+        for rule in lifecycle.get("rule", []):
+            lifecycle_rules.append({
+                "action": rule.get("action", {}),
+                "condition": rule.get("condition", {}),
+            })
+
+        # Build bucket record (match format from _enumerate_buckets_rest_api)
+        bucket_info = {
+            "project": item.get("projectNumber"),  # Note: returns projectNumber not projectId
+            "name": item.get("name"),
+            "id": item.get("id"),
+            "location": item.get("location"),
+            "location_type": item.get("locationType"),
+            "storage_class": item.get("storageClass"),
+            "created": item.get("timeCreated"),
+            "versioning_enabled": item.get("versioning", {}).get("enabled", False),
+            "is_public": is_public,
+            "public_access_prevention": public_access_prevention,
+            "uniform_bucket_level_access": uniform_access,
+            "iam_bindings": iam_bindings,
+            "lifecycle_rules": lifecycle_rules,
+            "default_kms_key": item.get("encryption", {}).get("defaultKmsKeyName"),
+            "labels": item.get("labels", {}),
+            "requester_pays": item.get("billing", {}).get("requesterPays", False),
+        }
+
+        return bucket_info
+
+    except Exception as e:
+        console.print(f"[red]Error getting bucket {bucket_name}: {str(e)}[/red]")
+        return None
+
+
+def _get_bucket_client_lib(
+    session_mgr: "GCPSessionManager", bucket_name: str, credentials: Any
+) -> Optional[Dict[str, Any]]:
+    """Get single bucket metadata using client library (for service_account/ADC)."""
+    try:
+        client = storage.Client(credentials=credentials)
+        bucket = client.get_bucket(bucket_name)
+
+        # Get IAM policy
+        is_public = False
+        iam_bindings = []
+        public_access_prevention = "inherited"
+        uniform_access = False
+
+        try:
+            policy = bucket.get_iam_policy()
+            for binding in policy.bindings:
+                iam_bindings.append({
+                    "role": binding["role"],
+                    "members": list(binding["members"]),
+                })
+                # Check for public access
+                if "allUsers" in binding["members"] or "allAuthenticatedUsers" in binding["members"]:
+                    is_public = True
+        except Exception:
+            pass
+
+        # Get public access prevention setting
+        try:
+            iam_config = bucket.iam_configuration
+            if hasattr(iam_config, "public_access_prevention"):
+                public_access_prevention = iam_config.public_access_prevention or "inherited"
+            if hasattr(iam_config, "uniform_bucket_level_access_enabled"):
+                uniform_access = iam_config.uniform_bucket_level_access_enabled
+            else:
+                uniform_access = False
+        except Exception:
+            uniform_access = False
+
+        # Get lifecycle rules
+        lifecycle_rules = []
+        if bucket.lifecycle_rules:
+            for rule in bucket.lifecycle_rules:
+                lifecycle_rules.append({
+                    "action": rule.get("action", {}),
+                    "condition": rule.get("condition", {}),
+                })
+
+        # Build bucket record (match format from _enumerate_buckets_client_lib)
+        # Note: cannot get project from bucket object, need to extract from session
+        project = session_mgr.current_session_data.get('project_id', bucket.project_number)
+
+        bucket_info = {
+            "project": project,
+            "name": bucket.name,
+            "id": bucket.id,
+            "location": bucket.location,
+            "location_type": bucket.location_type,
+            "storage_class": bucket.storage_class,
+            "created": bucket.time_created.isoformat() if bucket.time_created else None,
+            "versioning_enabled": bucket.versioning_enabled,
+            "is_public": is_public,
+            "public_access_prevention": public_access_prevention,
+            "uniform_bucket_level_access": uniform_access,
+            "iam_bindings": iam_bindings,
+            "lifecycle_rules": lifecycle_rules,
+            "default_kms_key": bucket.default_kms_key_name,
+            "labels": bucket.labels or {},
+            "requester_pays": bucket.requester_pays,
+        }
+
+        return bucket_info
+
+    except Exception as e:
+        console.print(f"[red]Error getting bucket {bucket_name}: {str(e)}[/red]")
+        return None
 
 
 def _enumerate_buckets_rest_api(

@@ -977,7 +977,9 @@ def run_gcp_cli(session_mgr: GCPSessionManager) -> str:
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_storage":
-                enumerate_storage_buckets(session_mgr)
+                # Optional arg: bucket_name (if specified, analyze only that bucket)
+                bucket_name = args[0] if args else None
+                enumerate_storage_buckets(session_mgr, bucket_name=bucket_name)
                 _log_command(session_mgr, cmd)
 
             elif cmd == "enumerate_iam":

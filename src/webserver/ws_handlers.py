@@ -449,10 +449,14 @@ class WebSocketCommandHandler:
                     await self.gcp_handler._run_gcp_enumerate_compute(execution_id, params)
                 elif module_name == 'enumerate_storage':
                     await self.gcp_handler._run_gcp_enumerate_storage(execution_id, params)
+                elif module_name == 'enumerate_objects':
+                    await self.gcp_handler._run_gcp_enumerate_objects(execution_id, params)
                 elif module_name == 'enumerate_iam':
                     await self.gcp_handler._run_gcp_enumerate_iam(execution_id, params)
                 elif module_name == 'enumerate_secrets':
                     await self.gcp_handler._run_gcp_enumerate_secrets(execution_id, params)
+                elif module_name == 'get_secret_value':
+                    await self.gcp_handler._run_gcp_get_secret_value(execution_id, params)
                 elif module_name == 'quick_enum':
                     await self.gcp_handler._run_gcp_quick_enum(execution_id, params)
                 elif module_name == 'enumerate_artifact_repositories':

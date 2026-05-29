@@ -113,7 +113,12 @@ class GCPHandler(BaseHandler):
                 await self._broadcast_module_error(execution_id, "No GCP session manager")
                 return
 
-            await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud Storage buckets...[/bold]")
+            bucket_name = params.get('bucket')
+
+            if bucket_name:
+                await self._broadcast_module_output(execution_id, f"[bold]Analyzing bucket: {bucket_name}...[/bold]")
+            else:
+                await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud Storage buckets...[/bold]")
 
             # Execute in thread pool
             loop = asyncio.get_event_loop()
@@ -123,7 +128,8 @@ class GCPHandler(BaseHandler):
                     self._execute_enumerate_storage,
                     manager,
                     execution_id,
-                    loop  # Pass loop to thread
+                    loop,  # Pass loop to thread
+                    bucket_name  # Pass bucket_name parameter
                 )
 
             if result:
@@ -142,6 +148,72 @@ class GCPHandler(BaseHandler):
 
         except Exception as e:
             logger.error(f"Error in enumerate_storage: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    async def _run_gcp_enumerate_objects(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate objects in a Cloud Storage bucket."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            bucket_name = params.get('bucket')
+            prefix = params.get('prefix', '')
+
+            if not bucket_name:
+                await self._broadcast_module_error(execution_id, "Bucket name is required")
+                return
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Enumerating objects in bucket: {bucket_name}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_objects,
+                    manager,
+                    execution_id,
+                    loop,
+                    bucket_name,
+                    prefix
+                )
+
+            if result:
+                total_objects = len(result)
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {total_objects} object(s) in bucket {bucket_name}[/green]"
+                )
+
+                # Create nodes for objects (limited to 10)
+                await self._create_storage_object_nodes(bucket_name, result[:10])
+
+                if total_objects > 10:
+                    await self._broadcast_module_output(
+                        execution_id,
+                        f"[cyan]ℹ️  Created 10 object nodes in graph (out of {total_objects} total objects)[/cyan]"
+                    )
+                else:
+                    await self._broadcast_module_output(
+                        execution_id,
+                        f"[green]✓ Created {total_objects} object nodes in attack graph[/green]"
+                    )
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[yellow]No objects found in bucket {bucket_name}[/yellow]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"Error in enumerate_objects: {e}", exc_info=True)
             await self._broadcast_module_error(execution_id, str(e))
 
     async def _run_gcp_enumerate_iam(self, execution_id: str, params: Dict[str, Any]) -> None:
@@ -225,6 +297,152 @@ class GCPHandler(BaseHandler):
         except Exception as e:
             logger.error(f"Error in enumerate_secrets: {e}", exc_info=True)
             await self._broadcast_module_error(execution_id, str(e))
+
+    async def _run_gcp_get_secret_value(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Get the value of a specific GCP secret."""
+        try:
+            import base64
+            import requests
+
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            secret_name = params.get('secret_name')
+            project_id = params.get('project') or params.get('project_id')
+            node_id = params.get('node_id')
+
+            if not secret_name:
+                await self._broadcast_module_error(execution_id, "Secret name is required")
+                return
+
+            # Get current project from session if not provided
+            if not project_id:
+                project_id = manager.current_session_data.get('project_id')
+
+            if not project_id:
+                await self._broadcast_module_error(execution_id, "Project ID is required")
+                return
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Getting secret value for: {secret_name}[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_get_secret_value,
+                    manager,
+                    secret_name,
+                    project_id,
+                )
+
+            if result and result.get('success'):
+                secret_value = result.get('value', '')
+
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Secret value retrieved ({len(secret_value)} characters)[/green]"
+                )
+
+                # Update node with secret value
+                if node_id:
+                    await self._update_secret_node_with_value(node_id, secret_value)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                error_msg = result.get('error', 'Failed to retrieve secret') if result else 'Failed to retrieve secret'
+                await self._broadcast_module_output(execution_id, f"[red]✗ {error_msg}[/red]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"Error in get_secret_value: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_get_secret_value(
+        self,
+        manager,
+        secret_name: str,
+        project_id: str,
+    ) -> Dict[str, Any]:
+        """Execute secret value retrieval (runs in thread pool)."""
+        import base64
+        import requests
+
+        try:
+            # Get credentials and token
+            credentials = manager.get_credentials()
+            if not credentials:
+                return {"success": False, "error": "No credentials configured"}
+
+            auth_method = manager.current_session_data.get("auth_method")
+
+            if auth_method == "access_token":
+                token = manager.current_session_data.get("access_token")
+            else:
+                from google.auth.transport.requests import Request
+                credentials.refresh(Request())
+                token = credentials.token
+
+            if not token:
+                return {"success": False, "error": "Failed to get access token"}
+
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Build full secret name and access URL
+            # Format: projects/{project}/secrets/{secret}/versions/latest
+            full_name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+            url = f"https://secretmanager.googleapis.com/v1/{full_name}:access"
+
+            # Make API request
+            response = requests.get(url, headers=headers, timeout=30)
+
+            if response.status_code != 200:
+                error_detail = response.json().get('error', {}).get('message', 'Unknown error') if response.text else f"HTTP {response.status_code}"
+                return {"success": False, "error": f"API error: {error_detail}"}
+
+            data = response.json()
+
+            # Extract and decode secret value
+            payload = data.get("payload", {})
+            if isinstance(payload, dict) and "data" in payload:
+                raw_data = payload["data"]
+                try:
+                    # Secret Manager always returns base64 encoded data
+                    decoded = base64.b64decode(raw_data).decode("utf-8")
+                    return {"success": True, "value": decoded}
+                except UnicodeDecodeError:
+                    # Binary data - return as base64
+                    return {"success": True, "value": raw_data, "is_binary": True}
+                except Exception as e:
+                    return {"success": False, "error": f"Failed to decode secret: {str(e)}"}
+
+            return {"success": False, "error": "No payload data in response"}
+
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": f"Network error: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+
+    async def _update_secret_node_with_value(self, node_id: str, secret_value: str) -> None:
+        """Update secret node with the retrieved value."""
+        for node in self.graph_state['nodes']:
+            if node.get('id') == node_id:
+                # Update node data
+                node['data']['secretValue'] = secret_value
+                node['data']['detailedInfoFetched'] = True
+                node['metadata']['lastUpdated'] = datetime.now().isoformat()
+
+                # Broadcast update
+                await self.broadcast_callback(
+                    create_success_response('graph.node.update', {'node': node})
+                )
+                logger.info(f"[GCP Secret] Updated node {node_id} with secret value")
+                break
 
     async def _run_gcp_quick_enum(self, execution_id: str, params: Dict[str, Any]) -> None:
         """Run quick enumeration across GCP services."""
@@ -710,7 +928,7 @@ class GCPHandler(BaseHandler):
         finally:
             compute_module.console = original_console
 
-    def _execute_enumerate_storage(self, manager, execution_id: str, loop):
+    def _execute_enumerate_storage(self, manager, execution_id: str, loop, bucket_name: Optional[str] = None):
         """Execute storage enumeration in thread."""
         from src.clouds.gcp.modules.enumeration.storage_buckets import enumerate_storage_buckets
 
@@ -728,10 +946,33 @@ class GCPHandler(BaseHandler):
                 force_terminal=False
             )
 
-            result = enumerate_storage_buckets(manager)
+            result = enumerate_storage_buckets(manager, bucket_name=bucket_name)
             return result
         finally:
             storage_module.console = original_console
+
+    def _execute_enumerate_objects(self, manager, execution_id: str, loop, bucket_name: str, prefix: str = ''):
+        """Execute storage objects enumeration in thread."""
+        from src.clouds.gcp.modules.enumeration.storage_objects import enumerate_bucket_objects
+
+        # Replace console with broadcast console
+        import src.clouds.gcp.modules.enumeration.storage_objects as objects_module
+        original_console = objects_module.console
+
+        try:
+            objects_module.console = self.BroadcastConsole(
+                self._broadcast_module_output,
+                execution_id,
+                loop,
+                file=StringIO(),
+                width=120,
+                force_terminal=False
+            )
+
+            result = enumerate_bucket_objects(manager, bucket_name=bucket_name, prefix=prefix if prefix else None)
+            return result
+        finally:
+            objects_module.console = original_console
 
     def _execute_enumerate_iam(self, manager, execution_id: str, loop):
         """Execute IAM enumeration in thread."""
@@ -1247,6 +1488,72 @@ class GCPHandler(BaseHandler):
                 }
                 await self._add_edge(edge)
 
+    async def _create_storage_object_nodes(self, bucket_name: str, objects: list) -> None:
+        """Create graph nodes for discovered GCP Storage objects (limited to 10)."""
+        # Find bucket node ID - search by bucket name in label or data
+        # Handle both 'bucket-name' and 'gs://bucket-name' formats
+        bucket_node_id = None
+        search_names = [
+            bucket_name,
+            f"gs://{bucket_name}",
+            bucket_name.replace("gs://", "")  # Remove gs:// if present
+        ]
+
+        for node in self.graph_state['nodes']:
+            if node.get('type') == 'gcp-storage':
+                node_bucket_name = node.get('data', {}).get('bucketName') or node.get('label')
+                # Try matching with all possible name formats
+                if node_bucket_name in search_names or any(node_bucket_name == name for name in search_names):
+                    bucket_node_id = node['id']
+                    break
+
+        if not bucket_node_id:
+            logger.error(f"[GCP Storage] Cannot find bucket node for '{bucket_name}'")
+            return
+
+        for idx, obj in enumerate(objects, 1):
+            object_name = obj.get('name', '')
+            # Create safe node ID
+            safe_name = object_name.replace('/', '-').replace('.', '-')
+            object_id = f"gcp-obj-{bucket_name}-{safe_name}"[:100]  # Limit ID length
+
+            # Create node for storage object
+            node = {
+                'id': object_id,
+                'type': 'gcp-storage-object',
+                'label': object_name.split('/')[-1] or object_name,  # Show only filename
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': bucket_node_id,
+                'data': {
+                    'objectName': object_name,
+                    'bucketName': bucket_name,
+                    'size': obj.get('size', 0),
+                    'contentType': obj.get('content_type', 'application/octet-stream'),
+                    'created': obj.get('created', ''),
+                    'updated': obj.get('updated', ''),
+                    'storageClass': obj.get('storage_class', 'STANDARD'),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_objects',
+                    'fullName': object_name,
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge from bucket to object
+            edge = {
+                'id': f"edge-{bucket_node_id}-{object_id}",
+                'source': bucket_node_id,
+                'target': object_id,
+                'type': 'contains',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+            }
+            await self._add_edge(edge)
+
     async def _create_storage_nodes(self, buckets: list) -> None:
         """Create graph nodes for Cloud Storage buckets."""
         for bucket in buckets:
@@ -1258,30 +1565,30 @@ class GCPHandler(BaseHandler):
                 'label': bucket['name'],
                 'provider': 'gcp',
                 'discoveredBy': [self.current_session_id] if self.current_session_id else [],
-                'parentId': None,
+                'parentId': self.current_session_id,  # Link to session as parent
                 'data': {
                     'project': bucket['project'],
                     'location': bucket.get('location'),
                     'storage_class': bucket.get('storage_class'),
                     'is_public': bucket.get('is_public', False),
                     'versioning_enabled': bucket.get('versioning_enabled', False),
+                    'bucketName': bucket['name'],  # For enumerate objects action
                 },
                 'metadata': {
                     'discoveredAt': datetime.now().isoformat(),
                     'moduleUsed': 'gcp_enumerate_storage',
                     'resourceId': bucket.get('id'),
                 },
-                'level': 3,  # Data level
+                'level': 1,  # Same level as other enumerated resources
             }
 
             await self._add_or_update_node(node)
 
             # Create edge from session to bucket
             if self.current_session_id:
-                session_node_id = f"gcp-session-{self.current_session}"
                 edge = {
-                    'id': f"{session_node_id}-owns-{node_id}",
-                    'source': session_node_id,
+                    'id': f"edge-{self.current_session_id}-{node_id}",
+                    'source': self.current_session_id,
                     'target': node_id,
                     'type': 'owns',
                     'discoveredBy': [self.current_session_id],
@@ -1413,29 +1720,30 @@ class GCPHandler(BaseHandler):
                 'label': secret['name'],
                 'provider': 'gcp',
                 'discoveredBy': [self.current_session_id] if self.current_session_id else [],
-                'parentId': None,
+                'parentId': self.current_session_id,  # Link to session as parent
                 'data': {
                     'project': secret['project'],
                     'location': secret.get('location', 'global'),
                     'version_count': secret.get('version_count', 0),
                     'replication': secret.get('replication'),
+                    'secretName': secret['name'],  # For exfil action
+                    'fullName': secret.get('full_name'),  # Full resource name
                 },
                 'metadata': {
                     'discoveredAt': datetime.now().isoformat(),
                     'moduleUsed': 'gcp_enumerate_secrets',
                     'resourceId': secret.get('full_name'),
                 },
-                'level': 4,  # Secrets level
+                'level': 1,  # Same level as other enumerated resources
             }
 
             await self._add_or_update_node(node)
 
             # Create edge from session to secret
             if self.current_session_id:
-                session_node_id = f"gcp-session-{self.current_session}"
                 edge = {
-                    'id': f"{session_node_id}-owns-{node_id}",
-                    'source': session_node_id,
+                    'id': f"edge-{self.current_session_id}-{node_id}",
+                    'source': self.current_session_id,
                     'target': node_id,
                     'type': 'owns',
                     'discoveredBy': [self.current_session_id],
