@@ -1712,15 +1712,26 @@ class GCPHandler(BaseHandler):
 
     async def _create_gcp_permission_nodes(self, bruteforce_result: Dict[str, Any]) -> None:
         """
-        Create GCP permission nodes for each service from bruteforce results.
+        Create GCP permission nodes with shared service nodes across modes.
 
         Structure:
         - Session node (root)
-          └─ gcp-permissions (parent permissions node)
-              ├─ gcp-iam-perms (IAM service permissions)
-              ├─ gcp-compute-perms (Compute service permissions)
-              ├─ gcp-storage-perms (Storage service permissions)
-              └─ gcp-{service}-perms (Other service permissions)
+          ├─ gcp-permissions (FAST mode parent)
+          ├─ gcp-permissions (FULL mode parent)
+          ├─ gcp-permissions (LOW mode parent)
+          ├─ gcp-iam-perms (shared service node)
+          ├─ gcp-storage-perms (shared service node)
+          └─ gcp-compute-perms (shared service node)
+
+        Edges:
+        - Session → FAST parent
+        - Session → FULL parent
+        - Session → LOW parent
+        - FAST parent → IAM service (if IAM found in FAST)
+        - FULL parent → IAM service (if IAM found in FULL)
+        - FULL parent → Compute service (if Compute found in FULL)
+
+        Service nodes accumulate permissions from all modes.
         """
         logger.info("[GCP Bruteforce] Creating permission nodes from bruteforce results")
 
@@ -1735,128 +1746,108 @@ class GCPHandler(BaseHandler):
             return
 
         mode = bruteforce_result.get('mode', 'fast')
-        modes_run = bruteforce_result.get('modes_run', [mode])
         project_id = bruteforce_result.get('project_id', 'unknown')
 
-        # Create or update parent permissions node
-        parent_node_id = f"{self.current_session_id}-permissions"
-        parent_node_exists = False
+        # Create mode-specific parent permissions node
+        parent_node_id = f"permissions-{self.current_session_id}-{mode}"
 
-        for node in self.graph_state['nodes']:
-            if node.get('id') == parent_node_id:
-                parent_node_exists = True
-                # Update existing parent node
-                node['data']['lastMode'] = mode
-                node['data']['modesRun'] = modes_run
-                node['data']['totalGranted'] = bruteforce_result.get('total_granted', 0)
-                node['data']['totalTested'] = bruteforce_result.get('total_tested', 0)
-                node['data']['dangerousCount'] = len(bruteforce_result.get('dangerous_found', []))
-                node['metadata']['lastUpdated'] = datetime.now().isoformat()
-                logger.info(f"[GCP Bruteforce] Updated parent permissions node: {parent_node_id}")
+        parent_node = {
+            'id': parent_node_id,
+            'type': 'gcp-permissions',
+            'label': f'Permissions Enumerated ({mode.upper()})',
+            'provider': 'gcp',
+            'discoveredBy': [self.current_session_id],
+            'parentId': self.current_session_id,
+            'data': {
+                'project': project_id,
+                'mode': mode,
+                'totalGranted': bruteforce_result.get('total_granted', 0),
+                'totalTested': bruteforce_result.get('total_tested', 0),
+                'dangerousCount': len(bruteforce_result.get('dangerous_found', [])),
+                'dangerousPermissions': bruteforce_result.get('dangerous_found', []),
+            },
+            'metadata': {
+                'discoveredAt': datetime.now().isoformat(),
+                'moduleUsed': 'gcp_bruteforce_permissions',
+                'project': project_id,
+                'mode': mode,
+            },
+            'level': 1,
+        }
+
+        # Add parent node to graph
+        await self._add_or_update_node(parent_node)
+
+        # Create edge from session to parent permissions node
+        edge = {
+            'id': f"edge-{self.current_session_id}-{parent_node_id}",
+            'source': self.current_session_id,
+            'target': parent_node_id,
+            'type': 'owns',
+            'label': 'bruteforced',
+            'discoveredBy': [self.current_session_id],
+        }
+        await self._add_edge(edge)
+
+        # Create or update shared service nodes (only for services with granted permissions)
+        services_with_grants = {k: v for k, v in by_service.items() if v.get('granted', 0) > 0}
+        logger.info(f"[GCP Bruteforce] Processing {len(services_with_grants)} services for mode {mode.upper()}")
+
+        for service_name, perms in services_with_grants.items():
+            # Shared service node ID (NOT mode-specific)
+            service_node_id = f"gcp-{service_name}-perms-{self.current_session_id}"
+
+            # Count dangerous permissions for this service
+            dangerous_in_service = [
+                p for p in perms['granted_permissions']
+                if p in bruteforce_result.get('dangerous_found', [])
+            ]
+
+            # Check if service node already exists
+            existing_node = self._find_node_by_id(service_node_id)
+
+            if existing_node:
+                # Merge permissions into existing node
+                logger.info(f"[GCP Bruteforce] Updating existing service node: {service_name}")
+
+                # Merge allowed permissions (union of sets)
+                existing_allowed = set(existing_node['data'].get('allowedPermissions', []))
+                new_allowed = set(perms['granted_permissions'])
+                merged_allowed = list(existing_allowed | new_allowed)
+
+                # Merge denied permissions (union of sets)
+                existing_denied = set(existing_node['data'].get('deniedPermissions', []))
+                new_denied = set(perms['denied_permissions'])
+                merged_denied = list(existing_denied | new_denied)
+
+                # Merge dangerous permissions
+                existing_dangerous = set(existing_node['data'].get('dangerousPermissions', []))
+                new_dangerous = set(dangerous_in_service)
+                merged_dangerous = list(existing_dangerous | new_dangerous)
+
+                # Update modes list
+                existing_modes = existing_node['data'].get('modes', [])
+                if mode not in existing_modes:
+                    existing_modes.append(mode)
+
+                # Update node data
+                existing_node['data']['modes'] = existing_modes
+                existing_node['data']['totalPermissions'] = len(merged_allowed) + len(merged_denied)
+                existing_node['data']['allowedCount'] = len(merged_allowed)
+                existing_node['data']['deniedCount'] = len(merged_denied)
+                existing_node['data']['dangerousCount'] = len(merged_dangerous)
+                existing_node['data']['allowedPermissions'] = merged_allowed
+                existing_node['data']['deniedPermissions'] = merged_denied
+                existing_node['data']['dangerousPermissions'] = merged_dangerous
+                existing_node['metadata']['lastUpdated'] = datetime.now().isoformat()
 
                 # Broadcast update
                 await self.broadcast_callback(
-                    create_success_response(
-                        'graph.node.update',
-                        {'node': node}
-                    )
+                    create_success_response('graph.node.update', {'node': existing_node})
                 )
-                break
-
-        if not parent_node_exists:
-            # Create new parent permissions node
-            logger.info(f"[GCP Bruteforce] Creating new parent permissions node: {parent_node_id}")
-
-            parent_node = {
-                'id': parent_node_id,
-                'type': 'gcp-permissions',
-                'label': 'Permissions',
-                'provider': 'gcp',
-                'discoveredBy': [self.current_session_id],
-                'parentId': self.current_session_id,
-                'data': {
-                    'project': project_id,
-                    'lastMode': mode,
-                    'modesRun': modes_run,
-                    'totalGranted': bruteforce_result.get('total_granted', 0),
-                    'totalTested': bruteforce_result.get('total_tested', 0),
-                    'dangerousCount': len(bruteforce_result.get('dangerous_found', [])),
-                    'dangerousPermissions': bruteforce_result.get('dangerous_found', []),
-                },
-                'metadata': {
-                    'discoveredAt': datetime.now().isoformat(),
-                    'lastUpdated': datetime.now().isoformat(),
-                    'moduleUsed': 'gcp_bruteforce_permissions',
-                    'project': project_id,
-                },
-                'level': 1,
-            }
-
-            # Add to graph using base method (handles broadcast)
-            await self._add_or_update_node(parent_node)
-
-            # Create edge from session to permissions node
-            edge = {
-                'id': f"{self.current_session_id}-owns-{parent_node_id}",
-                'source': self.current_session_id,
-                'target': parent_node_id,
-                'type': 'owns',
-                'discoveredBy': [self.current_session_id],
-            }
-            await self._add_edge(edge)
-
-        # Create service-specific permission nodes (only for services with granted permissions)
-        services_with_grants = {k: v for k, v in by_service.items() if v.get('granted', 0) > 0}
-        logger.info(f"[GCP Bruteforce] Creating {len(services_with_grants)} service nodes (filtered from {len(by_service)} total)")
-
-        for service_name, perms in services_with_grants.items():
-            # Create service node ID (e.g., gcp-iam-perms, gcp-compute-perms)
-            service_node_id = f"{parent_node_id}-{service_name}"
-
-            # Check if service node already exists
-            service_node_exists = False
-            for node in self.graph_state['nodes']:
-                if node.get('id') == service_node_id:
-                    service_node_exists = True
-                    # Update existing node with merged data
-                    node['data']['modes'] = list(set(node['data'].get('modes', []) + [mode]))
-                    node['data']['totalPermissions'] = perms['total']
-                    node['data']['allowedCount'] = perms['granted']
-                    node['data']['deniedCount'] = perms['denied']
-                    node['data']['allowedPermissions'] = perms['granted_permissions']
-                    node['data']['deniedPermissions'] = perms['denied_permissions']
-
-                    # Count dangerous permissions for this service
-                    dangerous_in_service = [
-                        p for p in perms['granted_permissions']
-                        if p in bruteforce_result.get('dangerous_found', [])
-                    ]
-                    node['data']['dangerousCount'] = len(dangerous_in_service)
-                    node['data']['dangerousPermissions'] = dangerous_in_service
-
-                    node['metadata']['lastUpdated'] = datetime.now().isoformat()
-                    node['metadata']['modes'] = list(set(node['metadata'].get('modes', []) + [mode]))
-
-                    logger.info(f"[GCP Bruteforce] Updated service node: {service_name}")
-
-                    # Broadcast update
-                    await self.broadcast_callback(
-                        create_success_response(
-                            'graph.node.update',
-                            {'node': node}
-                        )
-                    )
-                    break
-
-            if not service_node_exists:
-                # Create new service node
+            else:
+                # Create new shared service node
                 logger.info(f"[GCP Bruteforce] Creating new service node: {service_name}")
-
-                # Count dangerous permissions for this service
-                dangerous_in_service = [
-                    p for p in perms['granted_permissions']
-                    if p in bruteforce_result.get('dangerous_found', [])
-                ]
 
                 service_node = {
                     'id': service_node_id,
@@ -1864,7 +1855,7 @@ class GCPHandler(BaseHandler):
                     'label': service_name.upper(),
                     'provider': 'gcp',
                     'discoveredBy': [self.current_session_id],
-                    'parentId': parent_node_id,
+                    'parentId': None,  # No single parent - connected to multiple mode parents
                     'data': {
                         'service': service_name,
                         'modes': [mode],
@@ -1878,26 +1869,25 @@ class GCPHandler(BaseHandler):
                     },
                     'metadata': {
                         'discoveredAt': datetime.now().isoformat(),
+                        'lastUpdated': datetime.now().isoformat(),
                         'moduleUsed': 'gcp_bruteforce_permissions',
-                        'modes': [mode],
                         'service': service_name,
                         'project': project_id,
                     },
                     'level': 2,
                 }
 
-                # Add to graph using base method (handles broadcast)
                 await self._add_or_update_node(service_node)
 
-                # Create edge from parent permissions node to service node
-                edge = {
-                    'id': f"{parent_node_id}-{service_node_id}",
-                    'source': parent_node_id,
-                    'target': service_node_id,
-                    'type': 'contains',
-                    'label': service_name,
-                    'discoveredBy': [self.current_session_id],
-                }
-                await self._add_edge(edge)
+            # Create edge from mode parent to service node
+            edge = {
+                'id': f"edge-{parent_node_id}-{service_node_id}",
+                'source': parent_node_id,
+                'target': service_node_id,
+                'type': 'contains',
+                'label': service_name,
+                'discoveredBy': [self.current_session_id],
+            }
+            await self._add_edge(edge)
 
-        logger.info(f"[GCP Bruteforce] Successfully created/updated {len(by_service)} service permission node(s)")
+        logger.info(f"[GCP Bruteforce] Successfully processed permission node for {mode.upper()} with {len(services_with_grants)} services")
