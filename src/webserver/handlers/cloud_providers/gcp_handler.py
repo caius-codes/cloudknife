@@ -256,6 +256,68 @@ class GCPHandler(BaseHandler):
             logger.error(f"Error in enumerate_iam: {e}", exc_info=True)
             await self._broadcast_module_error(execution_id, str(e))
 
+    async def _run_gcp_enumerate_exploitable_sas(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate service accounts with dangerous permissions."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]🎯 Testing service accounts for dangerous permissions...[/bold]")
+
+            project_id = params.get('project') or params.get('project_id')
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_exploitable_sas,
+                    manager,
+                    execution_id,
+                    project_id,
+                    loop
+                )
+
+            if result:
+                exploitable = result.get('exploitable', [])
+                total_sas = result.get('total_sas', 0)
+
+                if exploitable:
+                    critical_count = sum(
+                        1 for sa in exploitable
+                        if any(p.get('severity') == 'CRITICAL' for p in sa.get('permissions', []))
+                    )
+
+                    await self._broadcast_module_output(
+                        execution_id,
+                        f"[green]✓ Found {len(exploitable)}/{total_sas} exploitable service account(s)[/green]"
+                    )
+
+                    if critical_count > 0:
+                        await self._broadcast_module_output(
+                            execution_id,
+                            f"[red]⚠️  {critical_count} with CRITICAL permissions![/red]"
+                        )
+
+                    # Update SA nodes with exploitable data
+                    await self._update_exploitable_sa_nodes(exploitable)
+                else:
+                    await self._broadcast_module_output(
+                        execution_id,
+                        f"[yellow]No exploitable service accounts found (tested {total_sas})[/yellow]"
+                    )
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No service accounts to test[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"Error in enumerate_exploitable_sas: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
     async def _run_gcp_enumerate_secrets(self, execution_id: str, params: Dict[str, Any]) -> None:
         """Enumerate Secret Manager secrets."""
         try:
@@ -997,6 +1059,53 @@ class GCPHandler(BaseHandler):
         finally:
             iam_module.console = original_console
 
+    def _execute_enumerate_exploitable_sas(self, manager, execution_id: str, project_id: Optional[str], loop):
+        """Execute exploitable SAs enumeration in thread."""
+        from src.clouds.gcp.modules.enumeration.sa_exploitation_targets import enumerate_exploitable_sas
+
+        # Replace console with broadcast console
+        import src.clouds.gcp.modules.enumeration.sa_exploitation_targets as sa_targets_module
+        original_console = sa_targets_module.console
+
+        try:
+            sa_targets_module.console = self.BroadcastConsole(
+                self._broadcast_module_output,
+                execution_id,
+                loop,
+                file=StringIO(),
+                width=120,
+                force_terminal=False
+            )
+
+            # Override Prompt to avoid interactive input
+            from rich.prompt import Prompt
+            original_prompt_ask = Prompt.ask
+
+            def mock_prompt_ask(prompt, **kwargs):
+                if 'Project ID' in prompt:
+                    return project_id or manager.current_session_data.get('project_id', '')
+                return kwargs.get('default', '')
+
+            Prompt.ask = mock_prompt_ask
+
+            try:
+                exploitable = enumerate_exploitable_sas(manager, project_id=project_id)
+
+                # Get total SAs from enumeration data
+                service_accounts = manager.get_enumeration_data('service_accounts') or []
+
+                # Return structured data
+                return {
+                    'project_id': project_id or manager.current_session_data.get('project_id'),
+                    'total_sas': len(service_accounts),
+                    'exploitable': exploitable,
+                }
+            finally:
+                Prompt.ask = original_prompt_ask
+
+        finally:
+            sa_targets_module.console = original_console
+
     def _execute_enumerate_secrets(self, manager, execution_id: str, project_id: Optional[str], loop):
         """Execute secrets enumeration in thread."""
         from src.clouds.gcp.modules.enumeration.secret_manager import enumerate_secrets
@@ -1709,6 +1818,59 @@ class GCPHandler(BaseHandler):
                 }
                 await self._add_edge(edge)
 
+    async def _update_exploitable_sa_nodes(self, exploitable_sas: list) -> None:
+        """Update service account nodes with exploitable permissions data."""
+        logger.info(f"[GCP Exploitable SAs] Updating {len(exploitable_sas)} SA nodes with exploitable data")
+
+        for sa_data in exploitable_sas:
+            sa_email = sa_data.get('email')
+            if not sa_email:
+                continue
+
+            node_id = f"gcp-sa-{sa_email}"
+
+            # Find existing node
+            existing_node = self._find_node_by_id(node_id)
+            if not existing_node:
+                logger.warning(f"[GCP Exploitable SAs] Node {node_id} not found, skipping update")
+                continue
+
+            # Extract dangerous permissions with severity
+            permissions = sa_data.get('permissions', [])
+            dangerous_perms = []
+            max_severity = 'LOW'
+
+            for perm in permissions:
+                perm_data = {
+                    'permission': perm.get('permission'),
+                    'description': perm.get('description'),
+                    'severity': perm.get('severity'),
+                }
+                dangerous_perms.append(perm_data)
+
+                # Track highest severity
+                severity = perm.get('severity', 'LOW')
+                if severity == 'CRITICAL':
+                    max_severity = 'CRITICAL'
+                elif severity == 'HIGH' and max_severity != 'CRITICAL':
+                    max_severity = 'HIGH'
+                elif severity == 'MEDIUM' and max_severity not in ('CRITICAL', 'HIGH'):
+                    max_severity = 'MEDIUM'
+
+            # Update node data
+            updates = {
+                'data': {
+                    **existing_node.get('data', {}),
+                    'isExploitable': True,
+                    'dangerousPermissions': dangerous_perms,
+                    'maxSeverity': max_severity,
+                    'disabled': sa_data.get('disabled', False),
+                },
+            }
+
+            await self._add_or_update_node({**existing_node, **updates})
+            logger.info(f"[GCP Exploitable SAs] Updated {node_id} with {len(dangerous_perms)} dangerous permission(s), severity: {max_severity}")
+
     async def _create_secret_nodes(self, secrets: list) -> None:
         """Create graph nodes for Secret Manager secrets."""
         for secret in secrets:
@@ -2199,3 +2361,1282 @@ class GCPHandler(BaseHandler):
             await self._add_edge(edge)
 
         logger.info(f"[GCP Bruteforce] Successfully processed permission node for {mode.upper()} with {len(services_with_grants)} services")
+
+    # ==================== Cloud Functions ====================
+
+    async def _run_gcp_enumerate_functions(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Cloud Functions."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud Functions...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_functions,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} Cloud Function(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_function_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No Cloud Functions found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Functions] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_functions(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Cloud Functions enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.cloud_functions import enumerate_cloud_functions
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            functions = enumerate_cloud_functions(manager)
+
+        return functions
+
+    async def _create_function_nodes(self, functions: list):
+        """Create graph nodes for Cloud Functions."""
+        if not functions:
+            return
+
+        category_node_id = await self._get_or_create_category_node('functions', 'Functions')
+
+        for func in functions:
+            node_id = f"gcp-function-{func.get('project', '')}-{func.get('name', '')}"
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-function',
+                'label': func.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'project': func.get('project', ''),
+                    'name': func.get('name', ''),
+                    'generation': func.get('generation', ''),
+                    'location': func.get('location', ''),
+                    'runtime': func.get('runtime', ''),
+                    'entry_point': func.get('entry_point', ''),
+                    'status': func.get('status', ''),
+                    'trigger_type': func.get('trigger_type', ''),
+                    'trigger_url': func.get('trigger_url', ''),
+                    'service_account': func.get('service_account', ''),
+                    'environment_variables': func.get('environment_variables', {}),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_functions',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+
+    # ==================== Parameters ====================
+
+    async def _run_gcp_enumerate_parameters(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Parameter Manager parameters."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Parameter Manager...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_parameters,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} parameter(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_parameter_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No parameters found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Parameters] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_parameters(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Parameter Manager enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.parameter_manager import enumerate_parameters
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        project_id = params.get('project')
+
+        with broadcast_console.capture():
+            parameters = enumerate_parameters(manager, project_id=project_id)
+
+        return parameters
+
+    async def _create_parameter_nodes(self, parameters: list):
+        """Create graph nodes for Parameter Manager parameters."""
+        if not parameters:
+            return
+
+        category_node_id = await self._get_or_create_category_node('parameters', 'Parameters')
+
+        for param in parameters:
+            node_id = f"gcp-parameter-{param.get('project', '')}-{param.get('name', '')}"
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-parameter',
+                'label': param.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'project': param.get('project', ''),
+                    'name': param.get('name', ''),
+                    'location': param.get('location', ''),
+                    'format': param.get('format', ''),
+                    'version_count': param.get('version_count', 0),
+                    'labels': param.get('labels', {}),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_parameters',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+
+    # ==================== Cloud SQL ====================
+
+    async def _run_gcp_enumerate_sql(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Cloud SQL instances."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud SQL instances...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_sql,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} Cloud SQL instance(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_sql_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No Cloud SQL instances found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Cloud SQL] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_sql(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Cloud SQL enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.cloud_sql import enumerate_cloud_sql
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            instances = enumerate_cloud_sql(manager)
+
+        return instances
+
+    async def _create_sql_nodes(self, instances: list):
+        """Create graph nodes for Cloud SQL instances."""
+        if not instances:
+            return
+
+        category_node_id = await self._get_or_create_category_node('cloudsql', 'Cloud SQL')
+
+        for instance in instances:
+            node_id = f"gcp-cloudsql-{instance.get('project', '')}-{instance.get('name', '')}"
+
+            # Determine severity based on security issues
+            severity = 'LOW'
+            if instance.get('has_open_access'):
+                severity = 'CRITICAL'
+            elif instance.get('has_public_ip') and not instance.get('require_ssl'):
+                severity = 'HIGH'
+            elif instance.get('has_public_ip'):
+                severity = 'MEDIUM'
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-cloudsql',
+                'label': instance.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'project': instance.get('project', ''),
+                    'name': instance.get('name', ''),
+                    'database_type': instance.get('database_type', ''),
+                    'database_version': instance.get('database_version', ''),
+                    'state': instance.get('state', ''),
+                    'region': instance.get('region', ''),
+                    'public_ip': instance.get('public_ip'),
+                    'private_ip': instance.get('private_ip'),
+                    'has_public_ip': instance.get('has_public_ip', False),
+                    'has_open_access': instance.get('has_open_access', False),
+                    'require_ssl': instance.get('require_ssl', False),
+                    'connection_name': instance.get('connection_name', ''),
+                    'databases': instance.get('databases', []),
+                    'users': instance.get('users', []),
+                    'severity': severity,
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_sql',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+# Temporary file for the 4 additional handlers
+# Cloud Build, Cloud Run, Compute Metadata, Google Drive, Resource Permissions
+
+    # ==================== Cloud Build ====================
+
+    async def _run_gcp_enumerate_cloud_build(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Cloud Build triggers."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud Build triggers...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_cloud_build,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} Cloud Build trigger(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_cloud_build_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No Cloud Build triggers found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Cloud Build] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_cloud_build(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Cloud Build enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.cloud_build import enumerate_cloud_build_triggers
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            triggers = enumerate_cloud_build_triggers(manager)
+
+        return triggers
+
+    async def _create_cloud_build_nodes(self, triggers: list):
+        """Create graph nodes for Cloud Build triggers."""
+        if not triggers:
+            return
+
+        category_node_id = await self._get_or_create_category_node('cloudbuild', 'Cloud Build')
+
+        for trigger in triggers:
+            node_id = f"gcp-cloudbuild-{trigger.get('project', '')}-{trigger.get('id', '')}"
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-cloudbuild',
+                'label': trigger.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'project': trigger.get('project', ''),
+                    'name': trigger.get('name', ''),
+                    'description': trigger.get('description', ''),
+                    'disabled': trigger.get('disabled', False),
+                    'repository_type': trigger.get('repository_type', ''),
+                    'repository_name': trigger.get('repository_name', ''),
+                    'service_account': trigger.get('service_account', ''),
+                    'substitutions': trigger.get('substitutions', {}),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_cloud_build',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+
+    # ==================== Cloud Run ====================
+
+    async def _run_gcp_enumerate_cloud_run(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Cloud Run services."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Cloud Run services...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_cloud_run,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} Cloud Run service(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_cloud_run_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No Cloud Run services found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Cloud Run] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_cloud_run(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Cloud Run enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.cloud_run_services import enumerate_cloud_run_services
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            services = enumerate_cloud_run_services(manager)
+
+        return services
+
+    async def _create_cloud_run_nodes(self, services: list):
+        """Create graph nodes for Cloud Run services."""
+        if not services:
+            return
+
+        category_node_id = await self._get_or_create_category_node('cloudrun', 'Cloud Run')
+
+        for service in services:
+            node_id = f"gcp-cloudrun-{service.get('project', '')}-{service.get('name', '')}"
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-cloudrun',
+                'label': service.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'project': service.get('project', ''),
+                    'name': service.get('name', ''),
+                    'region': service.get('region', ''),
+                    'url': service.get('url', ''),
+                    'ingress': service.get('ingress', ''),
+                    'service_account': service.get('service_account', ''),
+                    'image': service.get('image', ''),
+                    'environment_variables': service.get('environment_variables', {}),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_cloud_run',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+
+    # ==================== Compute Metadata ====================
+
+    async def _run_gcp_enumerate_compute_metadata(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Compute Engine metadata."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Compute Engine metadata...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_compute_metadata,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Extracted metadata from {len(result)} instance(s)[/green]"
+                )
+
+                # Metadata enriches existing compute nodes, no new nodes created
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No compute metadata found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Compute Metadata] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_compute_metadata(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Compute metadata enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.compute_metadata import enumerate_compute_metadata
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            metadata = enumerate_compute_metadata(manager)
+
+        return metadata
+
+    # ==================== Google Drive ====================
+
+    async def _run_gcp_enumerate_google_drive(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Enumerate Google Drive files."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            await self._broadcast_module_output(execution_id, "[bold]Enumerating Google Drive files...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_enumerate_google_drive,
+                    manager,
+                    execution_id,
+                    params,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} Drive file(s)[/green]"
+                )
+
+                # Create graph nodes
+                await self._create_google_drive_nodes(result)
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No Google Drive files found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Google Drive] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_enumerate_google_drive(self, manager, execution_id: str, params: Dict[str, Any], loop):
+        """Execute Google Drive enumeration in thread pool."""
+        from src.clouds.gcp.modules.enumeration.google_drive import enumerate_google_drive
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            files = enumerate_google_drive(manager)
+
+        return files
+
+    async def _create_google_drive_nodes(self, files: list):
+        """Create graph nodes for Google Drive files."""
+        if not files:
+            return
+
+        category_node_id = await self._get_or_create_category_node('google-drive', 'Google Drive')
+
+        for file in files:
+            node_id = f"gcp-drive-{file.get('id', '')}"
+
+            node = {
+                'id': node_id,
+                'type': 'gcp-drive',
+                'label': file.get('name', ''),
+                'provider': 'gcp',
+                'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                'parentId': category_node_id,
+                'data': {
+                    'file_id': file.get('id', ''),
+                    'name': file.get('name', ''),
+                    'mime_type': file.get('mimeType', ''),
+                    'size': file.get('size', 0),
+                    'created_time': file.get('createdTime', ''),
+                    'modified_time': file.get('modifiedTime', ''),
+                    'shared': file.get('shared', False),
+                    'owners': file.get('owners', []),
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_google_drive',
+                },
+                'level': 2,
+            }
+
+            await self._add_or_update_node(node)
+
+            # Create edge
+            if category_node_id:
+                edge = {
+                    'id': f"{category_node_id}-contains-{node_id}",
+                    'source': category_node_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [self.current_session_id] if self.current_session_id else [],
+                }
+                await self._add_edge(edge)
+
+    # ==================== Resource Permissions ====================
+
+    async def _run_gcp_resource_permissions(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Get permissions for a specific resource."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            resource = params.get('resource')
+            if not resource:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: resource")
+                return
+
+            await self._broadcast_module_output(execution_id, f"[bold]Getting permissions for {resource}...[/bold]")
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_resource_permissions,
+                    manager,
+                    execution_id,
+                    resource,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Retrieved permissions for {resource}[/green]"
+                )
+
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No permissions found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=True)
+
+        except Exception as e:
+            logger.error(f"[GCP Resource Permissions] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_resource_permissions(self, manager, execution_id: str, resource: str, loop):
+        """Execute resource permissions query in thread pool."""
+        from src.clouds.gcp.modules.enumeration.resource_permissions import get_resource_permissions
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            permissions = get_resource_permissions(manager, resource)
+
+        return permissions
+
+    # ==================== Exfiltration ====================
+
+    async def _run_gcp_download_object(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Download a Cloud Storage object."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            bucket = params.get('bucket')
+            object_name = params.get('object')
+
+            if not bucket or not object_name:
+                await self._broadcast_module_error(execution_id, "Missing required parameters: bucket and object")
+                return
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Downloading gs://{bucket}/{object_name}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_download_object,
+                    manager,
+                    execution_id,
+                    bucket,
+                    object_name,
+                    params.get('output'),
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Downloaded to: {result}[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[red]Download failed[/red]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Download Object] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_download_object(self, manager, execution_id: str, bucket: str, object_name: str, output: Optional[str], loop):
+        """Execute storage object download in thread pool."""
+        from src.clouds.gcp.modules.exfiltration.storage_exfil import download_object
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            result = download_object(manager, bucket, object_name, output)
+
+        return result
+
+    async def _run_gcp_exfil_parameter(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Get a specific parameter value."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            param_name = params.get('name')
+            project = params.get('project')
+
+            if not param_name:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: name")
+                return
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Getting parameter value: {param_name}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_exfiltrate_parameter,
+                    manager,
+                    execution_id,
+                    param_name,
+                    project,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Retrieved parameter value[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]Failed to get parameter value[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Get Parameter] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_exfiltrate_parameter(self, manager, execution_id: str, param_name: str, project: Optional[str], loop):
+        """Execute parameter value retrieval in thread pool."""
+        from src.clouds.gcp.modules.exfiltration.parameter_exfil import exfiltrate_parameter
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            result = exfiltrate_parameter(manager, param_name, project)
+
+        return result
+
+    # ==================== Lateral Movement ====================
+
+    async def _run_gcp_map_impersonation(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Map service account impersonation graph."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            project = params.get('project')
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Mapping impersonation graph{' for ' + project if project else ''}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_map_impersonation,
+                    manager,
+                    execution_id,
+                    project,
+                    loop
+                )
+
+            if result:
+                graph = result.get('graph', {})
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Mapped {len(graph)} service account(s)[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No impersonation graph created[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Map Impersonation] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_map_impersonation(self, manager, execution_id: str, project: Optional[str], loop):
+        """Execute impersonation mapping in thread pool."""
+        from src.clouds.gcp.modules.lateral_movement.implicit_delegation import map_impersonation_graph
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            result = map_impersonation_graph(manager, project_id=project)
+
+        return result
+
+    async def _run_gcp_find_chains(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Find service account delegation chains."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            target_sa = params.get('target_sa')
+            if not target_sa:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: target_sa")
+                return
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Finding delegation chains to {target_sa}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_find_chains,
+                    manager,
+                    execution_id,
+                    target_sa,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Found {len(result)} delegation chain(s)[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[yellow]No delegation chains found[/yellow]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Find Chains] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_find_chains(self, manager, execution_id: str, target_sa: str, loop):
+        """Execute chain finding in thread pool."""
+        from src.clouds.gcp.modules.lateral_movement.implicit_delegation import find_delegation_chains
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            chains = find_delegation_chains(manager, target_sa=target_sa)
+
+        return chains
+
+    async def _run_gcp_impersonate(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Impersonate a service account."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            service_account = params.get('service_account')
+            if not service_account:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: service_account")
+                return
+
+            delegates_str = params.get('delegates', '')
+            delegates = [d.strip() for d in delegates_str.split(',')] if delegates_str else None
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Impersonating {service_account}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_impersonate,
+                    manager,
+                    execution_id,
+                    service_account,
+                    delegates,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Successfully impersonated {service_account}[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[red]Impersonation failed[/red]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Impersonate] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_impersonate(self, manager, execution_id: str, service_account: str, delegates: Optional[List[str]], loop):
+        """Execute impersonation in thread pool."""
+        from src.clouds.gcp.modules.lateral_movement.implicit_delegation import impersonate_service_account
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            # Convert delegates list to chain format if provided
+            chain_index = None
+            if delegates:
+                # Store delegates in a temporary chain for the function to use
+                # The function will pick them up from session data
+                pass
+            
+            success = impersonate_service_account(
+                manager,
+                target_sa=service_account,
+                chain_index=chain_index,
+                show_curl=True
+            )
+
+        return success
+
+    async def _run_gcp_sign_jwt(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Sign JWT as a service account."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            service_account = params.get('service_account')
+            if not service_account:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: service_account")
+                return
+
+            payload = params.get('payload')
+            if payload and isinstance(payload, str):
+                import json
+                try:
+                    payload = json.loads(payload)
+                except:
+                    payload = None
+
+            delegates_str = params.get('delegates', '')
+            delegates = [d.strip() for d in delegates_str.split(',')] if delegates_str else None
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Signing JWT as {service_account}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_sign_jwt,
+                    manager,
+                    execution_id,
+                    service_account,
+                    payload,
+                    delegates,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ JWT signed successfully[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[red]JWT signing failed[/red]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Sign JWT] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_sign_jwt(self, manager, execution_id: str, service_account: str, payload: Optional[Dict], delegates: Optional[List[str]], loop):
+        """Execute JWT signing in thread pool."""
+        from src.clouds.gcp.modules.lateral_movement.sign_jwt import sign_jwt
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        with broadcast_console.capture():
+            result = sign_jwt(
+                manager,
+                service_account_email=service_account,
+                payload=payload,
+                delegates=delegates
+            )
+
+        return result
+
+    async def _run_gcp_sign_blob(self, execution_id: str, params: Dict[str, Any]) -> None:
+        """Sign blob as a service account."""
+        try:
+            manager = self._get_or_create_gcp_manager()
+            if not manager:
+                await self._broadcast_module_error(execution_id, "No GCP session manager")
+                return
+
+            service_account = params.get('service_account')
+            data = params.get('data')
+
+            if not service_account:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: service_account")
+                return
+
+            if not data:
+                await self._broadcast_module_error(execution_id, "Missing required parameter: data")
+                return
+
+            delegates_str = params.get('delegates', '')
+            delegates = [d.strip() for d in delegates_str.split(',')] if delegates_str else None
+
+            await self._broadcast_module_output(
+                execution_id,
+                f"[bold]Signing blob as {service_account}...[/bold]"
+            )
+
+            # Execute in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    self._execute_sign_blob,
+                    manager,
+                    execution_id,
+                    service_account,
+                    data,
+                    delegates,
+                    loop
+                )
+
+            if result:
+                await self._broadcast_module_output(
+                    execution_id,
+                    f"[green]✓ Blob signed successfully[/green]"
+                )
+                await self._broadcast_module_complete(execution_id, success=True)
+            else:
+                await self._broadcast_module_output(execution_id, "[red]Blob signing failed[/red]")
+                await self._broadcast_module_complete(execution_id, success=False)
+
+        except Exception as e:
+            logger.error(f"[GCP Sign Blob] Error: {e}", exc_info=True)
+            await self._broadcast_module_error(execution_id, str(e))
+
+    def _execute_sign_blob(self, manager, execution_id: str, service_account: str, data: str, delegates: Optional[List[str]], loop):
+        """Execute blob signing in thread pool."""
+        from src.clouds.gcp.modules.lateral_movement.sign_jwt import sign_blob
+
+        broadcast_console = self.BroadcastConsole(
+            self._broadcast_module_output_sync,
+            execution_id,
+            loop,
+            file=StringIO(),
+            width=120,
+            force_terminal=False
+        )
+
+        # Convert string to bytes
+        blob = data.encode('utf-8')
+
+        with broadcast_console.capture():
+            result = sign_blob(
+                manager,
+                service_account_email=service_account,
+                blob=blob,
+                delegates=delegates
+            )
+
+        return result

@@ -469,8 +469,47 @@ async def _create_member_and_binding(
             node_id = f"gcp-group-{member_id}"
 
     elif member_type == 'serviceAccount':
-        # Service account should already exist from _create_service_account_nodes
+        # Service account - create if doesn't exist (might be discovered only from bindings)
         node_id = f"gcp-sa-{member_id}"
+
+        # Check if SA node exists
+        existing_sa = handler._find_node_by_id(node_id)
+        if not existing_sa:
+            # Create SA node from binding (no detailed info, just email)
+            logger.debug(f"[GCP IAM] Creating SA node from binding: {member_id}")
+            display_name = member_id.split('@')[0]
+
+            sa_node = {
+                'id': node_id,
+                'type': 'gcp-sa',
+                'label': display_name,
+                'provider': 'gcp',
+                'discoveredBy': [handler.current_session_id] if handler.current_session_id else [],
+                'parentId': category_nodes.get('service_accounts'),
+                'data': {
+                    'email': member_id,
+                    'display_name': display_name,
+                    'discovered_from_bindings': True,  # Flag to indicate limited info
+                },
+                'metadata': {
+                    'discoveredAt': datetime.now().isoformat(),
+                    'moduleUsed': 'gcp_enumerate_iam',
+                },
+                'level': 2,
+            }
+            await handler._add_or_update_node(sa_node)
+
+            # Create edge: Service Accounts category -> SA
+            sa_category_id = category_nodes.get('service_accounts')
+            if sa_category_id:
+                edge = {
+                    'id': f"{sa_category_id}-contains-{node_id}",
+                    'source': sa_category_id,
+                    'target': node_id,
+                    'type': 'contains',
+                    'discoveredBy': [handler.current_session_id] if handler.current_session_id else [],
+                }
+                await handler._add_edge(edge)
 
     if not node_id:
         return

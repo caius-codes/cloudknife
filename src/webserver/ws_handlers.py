@@ -453,6 +453,8 @@ class WebSocketCommandHandler:
                     await self.gcp_handler._run_gcp_enumerate_objects(execution_id, params)
                 elif module_name == 'enumerate_iam':
                     await self.gcp_handler._run_gcp_enumerate_iam(execution_id, params)
+                elif module_name == 'enumerate_exploitable_sas':
+                    await self.gcp_handler._run_gcp_enumerate_exploitable_sas(execution_id, params)
                 elif module_name == 'enumerate_secrets':
                     await self.gcp_handler._run_gcp_enumerate_secrets(execution_id, params)
                 elif module_name == 'get_secret_value':
@@ -471,6 +473,36 @@ class WebSocketCommandHandler:
                     await self.gcp_handler._run_gcp_describe_service_account_iam_policy(execution_id, params)
                 elif module_name == 'bruteforce_permissions':
                     await self.gcp_handler._run_gcp_bruteforce_permissions(execution_id, params)
+                elif module_name == 'enumerate_functions':
+                    await self.gcp_handler._run_gcp_enumerate_functions(execution_id, params)
+                elif module_name == 'enumerate_parameters':
+                    await self.gcp_handler._run_gcp_enumerate_parameters(execution_id, params)
+                elif module_name == 'enumerate_sql':
+                    await self.gcp_handler._run_gcp_enumerate_sql(execution_id, params)
+                elif module_name == 'enumerate_cloud_build':
+                    await self.gcp_handler._run_gcp_enumerate_cloud_build(execution_id, params)
+                elif module_name == 'enumerate_cloud_run':
+                    await self.gcp_handler._run_gcp_enumerate_cloud_run(execution_id, params)
+                elif module_name == 'enumerate_compute_metadata':
+                    await self.gcp_handler._run_gcp_enumerate_compute_metadata(execution_id, params)
+                elif module_name == 'enumerate_google_drive':
+                    await self.gcp_handler._run_gcp_enumerate_google_drive(execution_id, params)
+                elif module_name == 'resource_permissions':
+                    await self.gcp_handler._run_gcp_resource_permissions(execution_id, params)
+                elif module_name == 'download_object':
+                    await self.gcp_handler._run_gcp_download_object(execution_id, params)
+                elif module_name == 'exfil_parameter':
+                    await self.gcp_handler._run_gcp_exfil_parameter(execution_id, params)
+                elif module_name == 'map_impersonation':
+                    await self.gcp_handler._run_gcp_map_impersonation(execution_id, params)
+                elif module_name == 'find_chains':
+                    await self.gcp_handler._run_gcp_find_chains(execution_id, params)
+                elif module_name == 'impersonate':
+                    await self.gcp_handler._run_gcp_impersonate(execution_id, params)
+                elif module_name == 'sign_jwt':
+                    await self.gcp_handler._run_gcp_sign_jwt(execution_id, params)
+                elif module_name == 'sign_blob':
+                    await self.gcp_handler._run_gcp_sign_blob(execution_id, params)
                 else:
                     await self._broadcast_module_error(
                         execution_id,
