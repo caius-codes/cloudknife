@@ -1738,7 +1738,7 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                         console.print("[dim]Usage: bruteforce_graph_permissions [fast|full][/dim]")
                         mode = "fast"
 
-                    bruteforce_graph_permissions(session_mgr, mode=mode)
+                    enumerate_bruteforce_graph_permissions(session_mgr, mode=mode)
                     status = "success"
                 except Exception as e:
                     console.print(f"[red]Command failed: {e}[/red]")
@@ -1755,7 +1755,7 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                         console.print("[dim]Usage: bruteforce_aad_permissions [fast|full][/dim]")
                         mode = "fast"
 
-                    bruteforce_aad_permissions(session_mgr, mode=mode)
+                    enumerate_bruteforce_aad_permissions(session_mgr, mode=mode)
                     status = "success"
                 except Exception as e:
                     console.print(f"[red]Command failed: {e}[/red]")

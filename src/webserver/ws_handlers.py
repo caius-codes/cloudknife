@@ -22,6 +22,7 @@ from .handlers.credential_handler import CredentialHandler
 from .handlers.graph_handler import GraphHandler
 from .handlers.cloud_providers.aws_handler import AWSHandler
 from .handlers.cloud_providers.gcp_handler import GCPHandler
+from .handlers.cloud_providers.azure_handler import AzureHandler
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +38,14 @@ class WebSocketCommandHandler:
         self.graph_handler = GraphHandler(broadcast_callback)
         self.aws_handler = AWSHandler(broadcast_callback)
         self.gcp_handler = GCPHandler(broadcast_callback)
+        self.azure_handler = AzureHandler(broadcast_callback)
 
         # Shared state management
         self.graph_state = self.session_handler.graph_state
         self.broadcast_callback = broadcast_callback
 
         # Share state between all handlers
-        for handler in [self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler]:
+        for handler in [self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler, self.azure_handler]:
             handler.graph_state = self.graph_state
             handler.session_managers = self.session_handler.session_managers
 
@@ -509,11 +511,38 @@ class WebSocketCommandHandler:
                         f"Unknown GCP module: {module_id}"
                     )
             elif self.current_cloud == 'azure':
-                # TODO: Implement Azure handler delegation
-                await self._broadcast_module_error(
-                    execution_id,
-                    f"Modules not yet implemented for Azure"
-                )
+                # Azure session and authentication handlers
+                if module_name == 'list_sessions':
+                    await self.azure_handler._run_azure_list_sessions(execution_id, params)
+                elif module_name == 'create_session':
+                    await self.azure_handler._run_azure_create_session(execution_id, params)
+                elif module_name == 'delete_session':
+                    await self.azure_handler._run_azure_delete_session(execution_id, params)
+                # Authentication methods (ordered by simplicity/popularity)
+                elif module_name == 'auth_az_cli':
+                    await self.azure_handler._run_azure_auth_az_cli(execution_id, params)
+                elif module_name == 'auth_interactive':
+                    await self.azure_handler._run_azure_auth_interactive(execution_id, params)
+                elif module_name == 'auth_password':
+                    await self.azure_handler._run_azure_auth_password(execution_id, params)
+                elif module_name == 'auth_service_principal':
+                    await self.azure_handler._run_azure_auth_service_principal(execution_id, params)
+                elif module_name == 'auth_device_code':
+                    await self.azure_handler._run_azure_auth_device_code(execution_id, params)
+                elif module_name == 'auth_access_token':
+                    await self.azure_handler._run_azure_auth_access_token(execution_id, params)
+                elif module_name == 'auth_managed_identity':
+                    await self.azure_handler._run_azure_auth_managed_identity(execution_id, params)
+                # User info and subscription
+                elif module_name == 'whoami':
+                    await self.azure_handler._run_azure_whoami(execution_id, params)
+                elif module_name == 'set_subscription':
+                    await self.azure_handler._run_azure_set_subscription(execution_id, params)
+                else:
+                    await self._broadcast_module_error(
+                        execution_id,
+                        f"Unknown Azure module: {module_id}"
+                    )
             else:
                 await self._broadcast_module_error(
                     execution_id,
@@ -526,7 +555,7 @@ class WebSocketCommandHandler:
 
     def _sync_session_state(self):
         """Synchronize current session state across all handlers."""
-        for handler in [self.session_handler, self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler]:
+        for handler in [self.session_handler, self.credential_handler, self.graph_handler, self.aws_handler, self.gcp_handler, self.azure_handler]:
             handler.current_session = self.current_session
             handler.current_session_id = self.current_session_id
             handler.current_cloud = self.current_cloud
