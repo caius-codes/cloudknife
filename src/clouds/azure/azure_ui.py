@@ -80,17 +80,17 @@ def print_help():
     # Collect all commands and descriptions to calculate max widths for consistent alignment
     all_data = [
         # Authentication
-        ("az_login", "Legacy: Authenticate using Azure CLI (requires az CLI installed)"),
-        ("login_az_cli", "Authenticate using Azure CLI (recommended for Conditional Access)"),
-        ("set_service_principal", "Configure service principal authentication (tenant_id, client_id, client_secret)"),
-        ("login_interactive", "Browser-based interactive login (may fail with Conditional Access)"),
-        ("login_device_code", "Device code flow for remote/SSH sessions"),
-        ("login_password", "Username/password login (ROPC flow) — useful for ADFS and federated scenarios"),
-        ("set_token", "Set access token (from env/file/input) — auto-detects audience from JWT and stores in correct slot"),
-        ("set_refresh_token", "Set refresh token and auto-discover accessible services (CloudProwl technique) - tests 8 Microsoft services"),
-        ("login_managed_identity", "Authenticate using managed identity (Azure VM/container)"),
-        ("get_graph_token", "Get Graph API token via username/password (ROPC flow, like AADInternals)"),
-        ("get_teams_token", "Get Teams API token via username/password (ROPC flow, like AADInternals)"),
+        ("az_login", "Legacy: Try username/password then fallback to browser (use login_az_cli instead)"),
+        ("login_az_cli", "Browser login via Azure CLI (recommended for MFA/Conditional Access)"),
+        ("set_service_principal", "Service principal auth (tenant_id, client_id, client_secret) — for automation/scripts"),
+        ("login_interactive", "Browser login via SDK (may fail with Conditional Access — use login_az_cli instead)"),
+        ("login_device_code", "Device code flow for remote/SSH sessions (shows code to enter on another device)"),
+        ("login_password", "Username/password (ROPC flow) — for ADFS/federated tenants or MFA bypass testing"),
+        ("set_token", "Use stolen/SSRF access token — auto-detects audience (Graph/ARM/etc.) from JWT"),
+        ("set_refresh_token", "Use stolen refresh token — auto-discovers accessible services (CloudProwl: tests 8 Microsoft APIs)"),
+        ("login_managed_identity", "Managed identity auth (for Azure VM/container with identity enabled)"),
+        ("get_graph_token", "Get Graph API token via username/password (ROPC flow, bypasses MFA like AADInternals)"),
+        ("get_teams_token", "Get Teams API token via username/password (ROPC flow, bypasses MFA like AADInternals)"),
         # General
         ("help / ?", "Show this help"),
         ("search <keyword>", "Search modules by keyword"),
