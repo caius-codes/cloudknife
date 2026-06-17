@@ -1089,9 +1089,29 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
             elif cmd == "get_teams_token":
                 from getpass import getpass
 
-                console.print("\n[bold cyan]Get Teams API Token (ROPC Flow)[/bold cyan]")
-                console.print("[dim]Similar to AADInternals' Get-AADIntAccessTokenForTeams[/dim]")
+                console.print("\n[bold cyan]Get Teams API Token[/bold cyan]")
+                console.print("[dim]Teams native API access (bypasses Conditional Access)[/dim]\n")
+
+                # Try to get token automatically using existing credentials
+                if session_mgr.auto_get_teams_token():
+                    # Success! Token obtained automatically
+                    _log_command(session_mgr, cmd)
+                    continue
+
+                # Automatic method failed, offer manual ROPC authentication
+                console.print("\n[yellow]Automatic token acquisition failed.[/yellow]")
+                console.print("[cyan]Fallback: Manual authentication via ROPC (username/password)[/cyan]")
                 console.print("[yellow]Note: Does not work with MFA-enabled or federated accounts.[/yellow]\n")
+
+                use_manual = Prompt.ask(
+                    "[cyan]Do you want to authenticate manually with username/password? [y/N][/cyan]",
+                    default="N"
+                ).strip().lower()
+
+                if use_manual != "y":
+                    console.print("[dim]Cancelled. Try other authentication methods first.[/dim]")
+                    _log_command(session_mgr, cmd, status="cancelled")
+                    continue
 
                 # Prompt for credentials
                 username = Prompt.ask("[cyan]Username (email)[/cyan]").strip()

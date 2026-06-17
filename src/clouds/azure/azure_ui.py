@@ -90,7 +90,7 @@ def print_help():
         ("set_refresh_token", "Use stolen refresh token — auto-discovers accessible services (CloudProwl: tests 8 Microsoft APIs)"),
         ("login_managed_identity", "Managed identity auth (for Azure VM/container with identity enabled)"),
         ("get_graph_token", "Get Graph API token automatically (like Connect-MgGraph) — reuses current auth or falls back to ROPC"),
-        ("get_teams_token", "Get Teams API token via username/password (ROPC flow, bypasses MFA like AADInternals)"),
+        ("get_teams_token", "Get Teams API token automatically (reuses current auth) or fallback to ROPC — bypasses Conditional Access"),
         # General
         ("help / ?", "Show this help"),
         ("search <keyword>", "Search modules by keyword"),

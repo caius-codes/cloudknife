@@ -1020,6 +1020,125 @@ class AzureSessionManager(SessionManager):
         console.print("[yellow]Try 'get_graph_token' to authenticate with username/password (ROPC flow).[/yellow]")
         return False
 
+    def auto_get_teams_token(self) -> bool:
+        """
+        Automatically obtain Teams API token using current authentication method.
+
+        Teams API requires the resource: https://api.spaces.skype.com
+        This method attempts to get the token automatically without re-authentication.
+
+        Note: Unlike Graph API, Teams tokens are more restrictive and may not work
+        with all auth methods. ROPC (username/password) is the most reliable for Teams.
+
+        Returns:
+            True if Teams token obtained successfully, False otherwise
+        """
+        if not self.current_session_data:
+            console.print("[yellow]No active session. Create or load a session first.[/yellow]")
+            return False
+
+        auth_method = self.current_session_data.get("auth_method")
+
+        if not auth_method:
+            console.print(
+                "[yellow]No authentication configured. "
+                "Use one of the login commands first.[/yellow]"
+            )
+            return False
+
+        console.print(f"[cyan]Attempting to get Teams token using {auth_method} credentials...[/cyan]")
+
+        # Method 1: Try refresh token (most reliable for Teams)
+        if auth_method == "refresh_token":
+            refresh_token = self.current_session_data.get("refresh_token")
+            if not refresh_token:
+                console.print("[red]No refresh token found in session.[/red]")
+                return False
+
+            try:
+                import requests
+
+                # Token endpoint
+                token_url = "https://login.microsoftonline.com/organizations/oauth2/token"
+
+                # Request Teams token using refresh token (OAuth v1.0 endpoint)
+                data = {
+                    "client_id": "d3590ed6-52b3-4102-aeff-aad2292ab01c",  # Microsoft Office client
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "resource": "https://api.spaces.skype.com",  # Teams API
+                }
+
+                response = requests.post(token_url, data=data, timeout=30)
+                response.raise_for_status()
+
+                result = response.json()
+                access_token = result.get("access_token")
+                expires_in = result.get("expires_in", 3600)
+
+                if access_token:
+                    import time
+                    from datetime import datetime
+                    expires_at = int(time.time()) + expires_in
+
+                    self.current_session_data["teams_access_token"] = access_token
+                    self.current_session_data["teams_token_expires_at"] = expires_at
+                    self.save_current_session()
+
+                    console.print("[green]✓ Teams API token obtained from refresh token![/green]")
+                    console.print(f"[dim]Token expires at: {datetime.fromtimestamp(expires_at).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+                    console.print("[dim]You can now use 'teams_messages' command to enumerate Teams messages.[/dim]")
+                    return True
+
+            except Exception as e:
+                console.print(f"[yellow]Failed to get Teams token from refresh token: {e}[/yellow]")
+
+        # Method 2: Check if we already have a Teams token (for access_token auth)
+        if auth_method == "access_token":
+            teams_token = self.current_session_data.get("teams_access_token")
+            if teams_token:
+                console.print("[green]✓ Teams token already available in session![/green]")
+                console.print("[dim]You can now use 'teams_messages' command.[/dim]")
+                return True
+            else:
+                console.print("[yellow]No Teams token stored. Use 'set_token' to add a Teams API token.[/yellow]")
+                return False
+
+        # Method 3: Try Azure CLI (may work for some scopes)
+        if auth_method == "az_cli":
+            console.print("[dim]Trying to extract Teams token from Azure CLI...[/dim]")
+            token_data = self.get_token_from_az_cli("https://api.spaces.skype.com", silent=True)
+            if token_data:
+                access_token = token_data.get("accessToken")
+                expires_on = token_data.get("expiresOn")
+
+                if access_token and expires_on:
+                    from datetime import datetime
+                    import time
+
+                    try:
+                        if "." in expires_on:
+                            dt = datetime.strptime(expires_on, "%Y-%m-%d %H:%M:%S.%f")
+                        else:
+                            dt = datetime.strptime(expires_on, "%Y-%m-%d %H:%M:%S")
+                        expires_at = int(dt.timestamp())
+                    except Exception:
+                        expires_at = int(time.time()) + 3600
+
+                    self.current_session_data["teams_access_token"] = access_token
+                    self.current_session_data["teams_token_expires_at"] = expires_at
+                    self.save_current_session()
+
+                    console.print("[green]✓ Teams token extracted from Azure CLI![/green]")
+                    console.print(f"[dim]Token expires at: {datetime.fromtimestamp(expires_at).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+                    console.print("[dim]You can now use 'teams_messages' command.[/dim]")
+                    return True
+
+        console.print(f"[yellow]Unable to automatically obtain Teams token with {auth_method} authentication.[/yellow]")
+        console.print("[yellow]Teams API has stricter requirements than Graph API.[/yellow]")
+        console.print("[yellow]Try 'get_teams_token' to authenticate with username/password (ROPC flow).[/yellow]")
+        return False
+
     def sync_user_info_from_graph(self) -> bool:
         """
         Sync current user information from Microsoft Graph API /me endpoint.
