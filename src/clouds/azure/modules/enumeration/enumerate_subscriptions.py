@@ -154,10 +154,10 @@ def enumerate_subscriptions(session_mgr: AzureSessionManager) -> None:
         # Suggest next steps
         if active_subs:
             console.print(f"\n[cyan]💡 Next steps:[/cyan]")
-            console.print(f"  - Use subscription ID with other enum commands")
-            console.print(f"  - enum_resources <subscription_id>")
-            console.print(f"  - enum_roles <subscription_id>")
-            console.print(f"  - enum_webapps (select subscription interactively)")
+            console.print(f"  - Use subscription ID with other enumerate commands")
+            console.print(f"  - enumerate_resources <subscription_id>")
+            console.print(f"  - enumerate_all_roles <subscription_id>")
+            console.print(f"  - enumerate_webapps (select subscription interactively)")
 
     except ImportError:
         console.print("[red]Azure SDK not installed. Install: pip install azure-mgmt-subscription[/red]")

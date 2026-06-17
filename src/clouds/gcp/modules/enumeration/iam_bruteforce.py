@@ -11,10 +11,10 @@ This is necessary because testIamPermissions on projects doesn't catch:
 - Some permission types that aren't testable via this API
 
 Usage:
-    bruteforce_permissions            # Fast mode (default) - high-value permissions
-    bruteforce_permissions full       # Full mode - extended common services
-    bruteforce_permissions low        # Low mode - comprehensive but less exploitable
-    bruteforce_permissions iam,compute fast  # Filter specific services
+    enumerate_bruteforce_permissions            # Fast mode (default) - high-value permissions
+    enumerate_bruteforce_permissions full       # Full mode - extended common services
+    enumerate_bruteforce_permissions low        # Low mode - comprehensive but less exploitable
+    enumerate_bruteforce_permissions iam,compute fast  # Filter specific services
 """
 
 from typing import Dict, List, Any, Optional, Tuple, TYPE_CHECKING
@@ -854,7 +854,7 @@ def analyze_privilege_escalation_paths(
     ).get("iam_bruteforce")
 
     if not results:
-        console.print("[yellow]No bruteforce results found. Run 'bruteforce_permissions' first.[/yellow]")
+        console.print("[yellow]No bruteforce results found. Run 'enumerate_bruteforce_permissions' first.[/yellow]")
         return
 
     granted = set(results.get("all_granted", []))

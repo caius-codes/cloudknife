@@ -88,7 +88,7 @@ def paginated_graph_request(
             elif e.response.status_code == 403:
                 console.print(f"[red]Permission denied: Insufficient privileges{error_detail}[/red]")
                 console.print("[yellow]Required permission may be missing from your token.[/yellow]")
-                console.print("[dim]Hint: Run 'bruteforce_graph_permissions' to enumerate your actual permissions.[/dim]")
+                console.print("[dim]Hint: Run 'enumerate_bruteforce_graph_permissions' to enumerate your actual permissions.[/dim]")
             elif e.response.status_code == 404:
                 console.print(f"[yellow]Resource not found{error_detail}[/yellow]")
                 console.print("[dim]This may indicate: (1) No mailbox/resource exists for this user, or (2) Invalid endpoint/ID.[/dim]")
@@ -187,7 +187,7 @@ def graph_api_call(
             elif e.response.status_code == 403:
                 console.print(f"[red]Permission denied: Insufficient privileges{error_detail}[/red]")
                 console.print("[yellow]Required permission may be missing from your token.[/yellow]")
-                console.print("[dim]Hint: Run 'bruteforce_graph_permissions' to enumerate your actual permissions.[/dim]")
+                console.print("[dim]Hint: Run 'enumerate_bruteforce_graph_permissions' to enumerate your actual permissions.[/dim]")
             elif e.response.status_code == 404:
                 console.print(f"[yellow]Resource not found{error_detail}[/yellow]")
                 console.print("[dim]This may indicate: (1) No mailbox/resource exists, or (2) Invalid endpoint/ID.[/dim]")

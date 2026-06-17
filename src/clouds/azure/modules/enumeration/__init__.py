@@ -13,6 +13,8 @@ from .enum_keyvault_secrets import enumerate_keyvault_secrets
 from .enum_roles import enumerate_role_assignments
 from .enum_users import enumerate_users
 from .enum_users_legacy import enumerate_users_legacy
+from .enumerate_user_memberships import enumerate_user_memberships
+from .enumerate_user_owned_objects import enumerate_user_owned_objects
 from .enumerate_container_apps import enumerate_container_apps
 from .enumerate_container_apps_full import enumerate_container_apps_full
 from .enumerate_disks import enumerate_disks
@@ -79,6 +81,8 @@ __all__ = [
     "enumerate_subscriptions",
     "enumerate_teams",
     "enumerate_teams_messages",
+    "enumerate_user_memberships",
+    "enumerate_user_owned_objects",
     "enumerate_users",
     "enumerate_users_legacy",
     "enumerate_virtual_machines",

@@ -897,6 +897,129 @@ class AzureSessionManager(SessionManager):
 
         return True
 
+    def auto_get_graph_token(self) -> bool:
+        """
+        Automatically obtain Graph API token using current authentication method.
+
+        This method reuses existing credentials (similar to PowerShell's Connect-MgGraph
+        after Connect-AzAccount) without requiring re-authentication:
+
+        - service_principal: Uses SP credentials to get Graph token
+        - interactive/device_code/password: Uses SDK credentials to request Graph scope
+        - az_cli: Extracts token from Azure CLI
+        - access_token: Checks if we have a Graph token stored
+        - refresh_token: Uses refresh token to get Graph access token
+
+        Returns:
+            True if Graph token obtained successfully, False otherwise
+        """
+        if not self.current_session_data:
+            console.print("[yellow]No active session. Create or load a session first.[/yellow]")
+            return False
+
+        auth_method = self.current_session_data.get("auth_method")
+
+        if not auth_method:
+            console.print(
+                "[yellow]No authentication configured. "
+                "Use one of the login commands first.[/yellow]"
+            )
+            return False
+
+        console.print(f"[cyan]Attempting to get Graph token using {auth_method} credentials...[/cyan]")
+
+        # Method 1: Try to get token via Azure SDK credential
+        if auth_method in ["service_principal", "interactive", "device_code", "password", "managed_identity"]:
+            try:
+                credential = self.get_credential(scope="graph")
+                if credential:
+                    # Request Graph scope token
+                    token = credential.get_token("https://graph.microsoft.com/.default")
+
+                    if token and token.token:
+                        # Store in session
+                        import time
+                        self.current_session_data["graph_access_token"] = token.token
+                        self.current_session_data["graph_token_expires_at"] = token.expires_on
+                        self.save_current_session()
+
+                        from datetime import datetime
+                        console.print("[green]✓ Graph API token obtained successfully![/green]")
+                        console.print(f"[dim]Token expires at: {datetime.fromtimestamp(token.expires_on).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+                        console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                        return True
+            except Exception as e:
+                console.print(f"[yellow]Failed to get token via SDK: {e}[/yellow]")
+                # Fallback to Azure CLI if SDK fails
+
+        # Method 2: Try Azure CLI (works for az_cli auth or as fallback)
+        if auth_method == "az_cli" or auth_method in ["service_principal", "interactive", "device_code"]:
+            console.print("[dim]Trying to extract token from Azure CLI...[/dim]")
+            if self._auto_extract_graph_token_from_cli():
+                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                return True
+
+        # Method 3: Check if we already have a Graph token (for access_token auth)
+        if auth_method == "access_token":
+            graph_token = self.current_session_data.get("graph_access_token")
+            if graph_token:
+                console.print("[green]✓ Graph token already available in session![/green]")
+                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                return True
+            else:
+                console.print("[yellow]No Graph token stored. Use 'set_token' to add a Graph API token.[/yellow]")
+                return False
+
+        # Method 4: Use refresh token if available
+        if auth_method == "refresh_token":
+            refresh_token = self.current_session_data.get("refresh_token")
+            if not refresh_token:
+                console.print("[red]No refresh token found in session.[/red]")
+                return False
+
+            try:
+                import requests
+
+                # Token endpoint
+                token_url = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
+
+                # Request Graph token using refresh token
+                data = {
+                    "client_id": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",  # Azure CLI client ID
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "scope": "https://graph.microsoft.com/.default",
+                }
+
+                response = requests.post(token_url, data=data, timeout=30)
+                response.raise_for_status()
+
+                result = response.json()
+                access_token = result.get("access_token")
+                expires_in = result.get("expires_in", 3600)
+
+                if access_token:
+                    import time
+                    from datetime import datetime
+                    expires_at = int(time.time()) + expires_in
+
+                    self.current_session_data["graph_access_token"] = access_token
+                    self.current_session_data["graph_token_expires_at"] = expires_at
+                    self.save_current_session()
+
+                    console.print("[green]✓ Graph API token obtained from refresh token![/green]")
+                    console.print(f"[dim]Token expires at: {datetime.fromtimestamp(expires_at).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+                    console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                    return True
+
+            except Exception as e:
+                console.print(f"[red]Failed to get Graph token from refresh token: {e}[/red]")
+                return False
+
+        console.print(f"[red]Unable to automatically obtain Graph token with {auth_method} authentication.[/red]")
+        console.print("[yellow]Try 'get_graph_token' to authenticate with username/password (ROPC flow).[/yellow]")
+        return False
+
     def sync_user_info_from_graph(self) -> bool:
         """
         Sync current user information from Microsoft Graph API /me endpoint.

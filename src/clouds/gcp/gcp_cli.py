@@ -1932,7 +1932,7 @@ def _whoami(session_mgr: GCPSessionManager) -> None:
     if not bruteforce_data:
         console.print(
             "\n[yellow]No bruteforce permission data found for this session. "
-            "Run 'bruteforce_permissions' to enumerate allowed actions.[/yellow]"
+            "Run 'enumerate_bruteforce_permissions' to enumerate allowed actions.[/yellow]"
         )
         return
 
@@ -1973,7 +1973,7 @@ def _whoami(session_mgr: GCPSessionManager) -> None:
             console.print(f"  [red]🔥[/red] {perm}")
         if len(dangerous_found) > 10:
             console.print(f"  [dim]... and {len(dangerous_found) - 10} more[/dim]")
-        console.print("\n[dim]Run 'privesc_paths' for privilege escalation analysis.[/dim]")
+        console.print("\n[dim]Run 'analyze_privilege_escalation_paths' for privilege escalation analysis.[/dim]")
     else:
         console.print(
             "\n[dim]Note: permissions above come from 'bruteforce_permissions' results. "

@@ -89,7 +89,7 @@ def print_help():
         ("set_token", "Use stolen/SSRF access token — auto-detects audience (Graph/ARM/etc.) from JWT"),
         ("set_refresh_token", "Use stolen refresh token — auto-discovers accessible services (CloudProwl: tests 8 Microsoft APIs)"),
         ("login_managed_identity", "Managed identity auth (for Azure VM/container with identity enabled)"),
-        ("get_graph_token", "Get Graph API token via username/password (ROPC flow, bypasses MFA like AADInternals)"),
+        ("get_graph_token", "Get Graph API token automatically (like Connect-MgGraph) — reuses current auth or falls back to ROPC"),
         ("get_teams_token", "Get Teams API token via username/password (ROPC flow, bypasses MFA like AADInternals)"),
         # General
         ("help / ?", "Show this help"),
@@ -132,6 +132,8 @@ def print_help():
         ("enumerate_roles", "Enumerate the users's roles"),
         ("enumerate_subscriptions", "Enumerate all accessible Azure subscriptions"),
         ("enumerate_users", "Enumerate all users in the tenant"),
+        ("enumerate_user_memberships", "Enumerate groups and roles a user is member of (like Get-MgUserMemberOf) — works with all auth methods"),
+        ("enumerate_user_owned_objects", "Enumerate apps, service principals, groups, and devices owned by a user (like Get-MgUserOwnedObject) — shows privilege escalation opportunities"),
         ("enumerate_external_users", "Enumerate external/guest users by mail prefix (e.g. 'ext.') + all guests — uses Graph ConsistencyLevel: eventual"),
         ("enumerate_webapps", "Enumerate Web Apps in the subscription (SDK with CLI fallback)"),
         # Microsoft Graph Operations

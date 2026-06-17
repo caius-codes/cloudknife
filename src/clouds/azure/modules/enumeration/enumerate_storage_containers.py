@@ -74,9 +74,16 @@ def enumerate_storage_containers(session_mgr: AzureSessionManager, account_name:
 
         containers = []
         for container in containers_iter:
+            # Get last_modified - attribute name varies in SDK versions
+            last_modified = None
+            if hasattr(container, 'last_modified_time') and container.last_modified_time:
+                last_modified = container.last_modified_time.isoformat()
+            elif hasattr(container, 'last_modified') and container.last_modified:
+                last_modified = container.last_modified.isoformat()
+
             containers.append({
                 "name": container.name,
-                "last_modified": container.last_modified.isoformat() if container.last_modified else None,
+                "last_modified": last_modified,
                 "metadata": container.metadata or {},
                 "public_access": container.public_access,
                 "has_immutability_policy": container.has_immutability_policy,

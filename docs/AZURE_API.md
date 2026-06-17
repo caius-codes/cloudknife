@@ -52,7 +52,7 @@ All methods are implemented in the backend (`azure_handler.py`) and exposed via 
 }
 ```
 
-### Create/Load Session
+### Create/Load Session (Simple - No Authentication)
 ```json
 {
   "type": "module.run",
@@ -73,14 +73,63 @@ All methods are implemented in the backend (`azure_handler.py`) and exposed via 
   "data": {
     "session_name": "my-azure-session",
     "session_id": "uuid-here",
-    "tenant_id": "...",
-    "subscription_id": "...",
-    "subscription_name": "...",
-    "account_name": "...",
-    "auth_method": "service_principal"
+    "authenticated": false
   }
 }
 ```
+
+### Create Session with Username/Password (One-Step)
+
+**This is the simplest way to get started!** Creates a session and authenticates in one API call.
+
+```json
+{
+  "type": "module.run",
+  "payload": {
+    "module_id": "azure.create_session",
+    "params": {
+      "name": "my-azure-session",
+      "username": "user@domain.com",
+      "password": "password123",
+      "tenant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  // optional
+    }
+  }
+}
+```
+
+**Response (Success):**
+```json
+{
+  "type": "azure_session_created",
+  "success": true,
+  "data": {
+    "session_name": "my-azure-session",
+    "session_id": "uuid-here",
+    "tenant_id": "...",
+    "subscription_id": "...",
+    "subscription_name": "...",
+    "account_name": "user@domain.com",
+    "auth_method": "password",
+    "authenticated": true,
+    "username": "user@domain.com"
+  }
+}
+```
+
+**Response (Auth Failed):**
+```json
+{
+  "type": "azure_session_created",
+  "success": false,
+  "error": "Session created but authentication failed. Check credentials or ensure ROPC is enabled."
+}
+```
+
+**Note:** This uses the ROPC (Resource Owner Password Credentials) flow, which:
+- ❌ Does NOT work with MFA-enabled accounts
+- ❌ Does NOT work with federated accounts (some cases)
+- ✅ Works great for testing and development
+- ✅ Works with ADFS in many cases
 
 ### Delete Session
 ```json

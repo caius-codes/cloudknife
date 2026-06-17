@@ -45,7 +45,7 @@ def analyze_privilege_escalation(
     if not bruteforce_data:
         console.print(
             "[yellow]⚠️  No IAM bruteforce data found in current session.[/yellow]\n"
-            "[dim]Run 'bruteforce_permissions iam fast' first to test permissions.[/dim]"
+            "[dim]Run 'enumerate_bruteforce_permissions iam fast' first to test permissions.[/dim]"
         )
         return
 

@@ -48,6 +48,8 @@ from .modules.enumeration import (
     enumerate_subscriptions,
     enumerate_teams,
     enumerate_teams_messages,
+    enumerate_user_memberships,
+    enumerate_user_owned_objects,
     enumerate_users,
     enumerate_users_legacy,
     enumerate_virtual_machines,
@@ -189,6 +191,8 @@ def build_completer(session_mgr: AzureSessionManager) -> WordCompleter:
         "enumerate_storage_containers",
         "enumerate_storage_full",
         "enumerate_subscriptions",
+        "enumerate_user_memberships",
+        "enumerate_user_owned_objects",
         "enumerate_users",
         "enumerate_virtual_machines",
         "enumerate_vnets",
@@ -1028,9 +1032,29 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
             elif cmd == "get_graph_token":
                 from getpass import getpass
 
-                console.print("\n[bold cyan]Get Graph API Token (ROPC Flow)[/bold cyan]")
-                console.print("[dim]Similar to AADInternals' Get-AADIntAccessTokenForMSGraph[/dim]")
+                console.print("\n[bold cyan]Get Graph API Token[/bold cyan]")
+                console.print("[dim]Similar to PowerShell's Connect-MgGraph[/dim]\n")
+
+                # Try to get token automatically using existing credentials
+                if session_mgr.auto_get_graph_token():
+                    # Success! Token obtained automatically
+                    _log_command(session_mgr, cmd)
+                    continue
+
+                # Automatic method failed, offer manual ROPC authentication
+                console.print("\n[yellow]Automatic token acquisition failed.[/yellow]")
+                console.print("[cyan]Fallback: Manual authentication via ROPC (username/password)[/cyan]")
                 console.print("[yellow]Note: Does not work with MFA-enabled or federated accounts.[/yellow]\n")
+
+                use_manual = Prompt.ask(
+                    "[cyan]Do you want to authenticate manually with username/password? [y/N][/cyan]",
+                    default="N"
+                ).strip().lower()
+
+                if use_manual != "y":
+                    console.print("[dim]Cancelled. Try other authentication methods first.[/dim]")
+                    _log_command(session_mgr, cmd, status="cancelled")
+                    continue
 
                 # Prompt for credentials
                 username = Prompt.ask("[cyan]Username (email)[/cyan]").strip()
@@ -1222,7 +1246,7 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                     # Only show hint if authenticated but no bruteforce data
                     console.print(
                         "\n[yellow]No Graph API permission data found for this session. "
-                        "Run 'bruteforce_graph_permissions' to enumerate Graph permissions.[/yellow]\n"
+                        "Run 'enumerate_bruteforce_graph_permissions' to enumerate Graph permissions.[/yellow]\n"
                     )
 
                 # Show warning if no auth configured
@@ -1293,6 +1317,24 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
             elif cmd == "enumerate_users":
                 try:
                     enumerate_users(session_mgr)
+                    status = "success"
+                except Exception as e:
+                    console.print(f"[red]Command failed: {e}[/red]")
+                    status = "failed"
+                _log_command(session_mgr, cmd, status)
+
+            elif cmd == "enumerate_user_memberships":
+                try:
+                    enumerate_user_memberships(session_mgr)
+                    status = "success"
+                except Exception as e:
+                    console.print(f"[red]Command failed: {e}[/red]")
+                    status = "failed"
+                _log_command(session_mgr, cmd, status)
+
+            elif cmd == "enumerate_user_owned_objects":
+                try:
+                    enumerate_user_owned_objects(session_mgr)
                     status = "success"
                 except Exception as e:
                     console.print(f"[red]Command failed: {e}[/red]")

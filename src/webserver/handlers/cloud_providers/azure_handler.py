@@ -71,7 +71,12 @@ class AzureHandler(BaseHandler):
             )
 
     async def _run_azure_create_session(self, execution_id: str, params: Dict[str, Any]) -> None:
-        """Create or load an Azure session."""
+        """
+        Create or load an Azure session.
+
+        If username and password are provided, also authenticates the session.
+        This is the simplest way to get started: create + authenticate in one step.
+        """
         try:
             manager = self._get_or_create_azure_manager()
             if not manager:
@@ -86,30 +91,77 @@ class AzureHandler(BaseHandler):
                 return
 
             session_name = params.get('name', 'azure-default')
+            username = params.get('username')
+            password = params.get('password')
+            tenant_id = params.get('tenant_id', '')
+
+            # Create/load the session
             manager.create_or_load_session(session_name)
 
             # Clear credential cache for new/switched session
             manager.clear_credential_cache()
 
-            # Get session data
-            session_data = manager.current_session_data or {}
+            # If username and password provided, authenticate immediately
+            if username and password:
+                logger.info(f"Creating session '{session_name}' with username/password authentication")
 
-            await self._send_response(
-                execution_id,
-                WebSocketResponse(
-                    type="azure_session_created",
-                    success=True,
-                    data={
-                        "session_name": session_name,
-                        "session_id": manager.session_id,
-                        "tenant_id": session_data.get("tenant_id"),
-                        "subscription_id": session_data.get("subscription_id"),
-                        "subscription_name": session_data.get("subscription_name"),
-                        "account_name": session_data.get("account_name"),
-                        "auth_method": session_data.get("auth_method")
-                    }
+                # Use the session manager's set_password_auth method
+                success = manager.set_password_auth(username, password, tenant_id if tenant_id else None)
+
+                if not success:
+                    await self._send_response(
+                        execution_id,
+                        WebSocketResponse(
+                            type="azure_session_created",
+                            success=False,
+                            error="Session created but authentication failed. Check credentials or ensure ROPC is enabled."
+                        )
+                    )
+                    return
+
+                # Get updated session data after authentication
+                session_data = manager.current_session_data or {}
+
+                await self._send_response(
+                    execution_id,
+                    WebSocketResponse(
+                        type="azure_session_created",
+                        success=True,
+                        data={
+                            "session_name": session_name,
+                            "session_id": manager.session_id,
+                            "tenant_id": session_data.get("tenant_id"),
+                            "subscription_id": session_data.get("subscription_id"),
+                            "subscription_name": session_data.get("subscription_name"),
+                            "account_name": session_data.get("account_name"),
+                            "auth_method": session_data.get("auth_method"),
+                            "authenticated": True,
+                            "username": username
+                        }
+                    )
                 )
-            )
+            else:
+                # No credentials provided - just create the session
+                logger.info(f"Creating session '{session_name}' without authentication")
+                session_data = manager.current_session_data or {}
+
+                await self._send_response(
+                    execution_id,
+                    WebSocketResponse(
+                        type="azure_session_created",
+                        success=True,
+                        data={
+                            "session_name": session_name,
+                            "session_id": manager.session_id,
+                            "tenant_id": session_data.get("tenant_id"),
+                            "subscription_id": session_data.get("subscription_id"),
+                            "subscription_name": session_data.get("subscription_name"),
+                            "account_name": session_data.get("account_name"),
+                            "auth_method": session_data.get("auth_method"),
+                            "authenticated": False
+                        }
+                    )
+                )
 
         except Exception as e:
             logger.error(f"Error creating Azure session: {e}", exc_info=True)

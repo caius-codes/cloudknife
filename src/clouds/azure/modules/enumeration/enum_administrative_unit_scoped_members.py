@@ -12,19 +12,19 @@ from ...azure_session import AzureSessionManager
 console = Console()
 
 
-def _get_role_description(role_id: str, access_token: str) -> str:
+def _get_role_info(role_id: str, access_token: str) -> Dict[str, str]:
     """
-    Retrieves a role's description via Microsoft Graph API.
+    Retrieves a role's display name and description via Microsoft Graph API.
 
     Args:
         role_id: Role ID to query
         access_token: Bearer token for authentication
 
     Returns:
-        Role description or "N/A" if not available
+        Dictionary with 'displayName' and 'description' or "N/A" if not available
     """
     if not role_id or role_id == "N/A":
-        return "N/A"
+        return {"displayName": "N/A", "description": "N/A"}
 
     uri = f"https://graph.microsoft.com/v1.0/directoryRoles/{role_id}"
 
@@ -38,12 +38,17 @@ def _get_role_description(role_id: str, access_token: str) -> str:
         response.raise_for_status()
 
         role_data = response.json()
+        display_name = role_data.get("displayName", "N/A")
         description = role_data.get("description", "N/A")
-        return description if description else "N/A"
+
+        return {
+            "displayName": display_name if display_name else "N/A",
+            "description": description if description else "N/A"
+        }
 
     except (requests.exceptions.RequestException, Exception):
         # On error, return N/A without blocking execution
-        return "N/A"
+        return {"displayName": "N/A", "description": "N/A"}
 
 
 def enumerate_administrative_unit_scoped_members(session_mgr: AzureSessionManager) -> None:
@@ -133,28 +138,31 @@ def enumerate_administrative_unit_scoped_members(session_mgr: AzureSessionManage
         if role_id and role_id != "N/A":
             unique_role_ids.add(role_id)
 
-    # Step 2: Batch fetch role descriptions for unique IDs
+    # Step 2: Batch fetch role info (displayName + description) for unique IDs
     role_cache = {}
     if unique_role_ids:
-        console.print(f"[dim]Fetching {len(unique_role_ids)} unique role descriptions...[/dim]")
+        console.print(f"[dim]Fetching {len(unique_role_ids)} unique role details...[/dim]")
         for role_id in unique_role_ids:
-            role_cache[role_id] = _get_role_description(role_id, access_token)
+            role_cache[role_id] = _get_role_info(role_id, access_token)
 
     # Create results table
     table = Table(title=f"Scoped Role Members - Administrative Unit: {admin_unit_id}")
     table.add_column("Role ID", style="cyan")
-    table.add_column("Role Description", style="magenta")
+    table.add_column("Role Display Name", style="bold magenta")
+    table.add_column("Role Description", style="dim")
     table.add_column("Member Display Name", style="green")
     table.add_column("Member ID", style="yellow")
     table.add_column("Assignment ID", style="dim")
 
-    # Step 3: Use cached descriptions when building table
+    # Step 3: Use cached role info when building table
     for member in members:
         role_id = member.get("roleId", "N/A")
         assignment_id = member.get("id", "N/A")
 
-        # Use cached role description instead of calling API
-        role_description = role_cache.get(role_id, "N/A")
+        # Use cached role info instead of calling API
+        role_info = role_cache.get(role_id, {"displayName": "N/A", "description": "N/A"})
+        role_display_name = role_info.get("displayName", "N/A")
+        role_description = role_info.get("description", "N/A")
 
         # roleMemberInfo may contain member information
         role_member_info = member.get("roleMemberInfo", {})
@@ -163,6 +171,7 @@ def enumerate_administrative_unit_scoped_members(session_mgr: AzureSessionManage
 
         table.add_row(
             role_id,
+            role_display_name,
             role_description,
             member_display_name,
             member_id,

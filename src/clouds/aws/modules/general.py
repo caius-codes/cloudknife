@@ -447,7 +447,7 @@ def whoami(session_mgr: AWSSessionManager) -> None:
     if not bruteforce_data:
         console.print(
             "[yellow]No bruteforce permission data found for this session. "
-            "Run 'bruteforce_permissions' to enumerate allowed actions.[/yellow]"
+            "Run 'enumerate_bruteforce_permissions' to enumerate allowed actions.[/yellow]"
         )
         return
 

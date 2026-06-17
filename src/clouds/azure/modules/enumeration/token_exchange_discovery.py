@@ -405,7 +405,7 @@ def _display_results(results: List[Dict[str, Any]], tenant_id: Optional[str]):
             if service == "Microsoft Graph":
                 console.print("  [cyan]→ Use graph_mail, graph_teams, graph_files for enumeration[/cyan]")
             elif service == "Azure Resource Manager":
-                console.print("  [cyan]→ Use enum_resources, enum_vms for enumeration[/cyan]")
+                console.print("  [cyan]→ Use enumerate_resources, enumerate_virtual_machines for enumeration[/cyan]")
             elif service == "Azure DevOps":
                 console.print("  [cyan]→ Enumerate repositories, pipelines, secrets[/cyan]")
             elif "Power" in service:
