@@ -928,67 +928,23 @@ class AzureSessionManager(SessionManager):
 
         console.print(f"[cyan]Attempting to get Graph token using {auth_method} credentials...[/cyan]")
 
-        # Method 1: Try to get token via Azure SDK credential
-        if auth_method in ["service_principal", "interactive", "device_code", "password", "managed_identity"]:
-            try:
-                credential = self.get_credential(scope="graph")
-                if credential:
-                    # Request Graph scope token
-                    token = credential.get_token("https://graph.microsoft.com/.default")
-
-                    if token and token.token:
-                        # Store in session
-                        import time
-                        self.current_session_data["graph_access_token"] = token.token
-                        self.current_session_data["graph_token_expires_at"] = token.expires_on
-                        self.save_current_session()
-
-                        from datetime import datetime
-                        console.print("[green]✓ Graph API token obtained successfully![/green]")
-                        console.print(f"[dim]Token expires at: {datetime.fromtimestamp(token.expires_on).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
-                        console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
-                        return True
-            except Exception as e:
-                console.print(f"[yellow]Failed to get token via SDK: {e}[/yellow]")
-                # Fallback to Azure CLI if SDK fails
-
-        # Method 2: Try Azure CLI (works for az_cli auth or as fallback)
-        if auth_method == "az_cli" or auth_method in ["service_principal", "interactive", "device_code"]:
-            console.print("[dim]Trying to extract token from Azure CLI...[/dim]")
-            if self._auto_extract_graph_token_from_cli():
-                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
-                return True
-
-        # Method 3: Check if we already have a Graph token (for access_token auth)
-        if auth_method == "access_token":
-            graph_token = self.current_session_data.get("graph_access_token")
-            if graph_token:
-                console.print("[green]✓ Graph token already available in session![/green]")
-                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
-                return True
-            else:
-                console.print("[yellow]No Graph token stored. Use 'set_token' to add a Graph API token.[/yellow]")
-                return False
-
-        # Method 4: Use refresh token if available
-        if auth_method == "refresh_token":
-            refresh_token = self.current_session_data.get("refresh_token")
-            if not refresh_token:
-                console.print("[red]No refresh token found in session.[/red]")
-                return False
-
+        # Method 1: PRIORITY - Use refresh token if available (any auth method)
+        # This uses Microsoft Office client ID which has broader scope support than Azure CLI
+        refresh_token = self.current_session_data.get("refresh_token")
+        if refresh_token:
             try:
                 import requests
 
-                # Token endpoint
-                token_url = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
+                # Token endpoint (v1.0 for better scope coverage)
+                token_url = "https://login.microsoftonline.com/organizations/oauth2/token"
 
                 # Request Graph token using refresh token
+                # Use Microsoft Office client ID (same as ROPC) for broader scope support
                 data = {
-                    "client_id": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",  # Azure CLI client ID
+                    "client_id": "d3590ed6-52b3-4102-aeff-aad2292ab01c",  # Microsoft Office client ID
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "scope": "https://graph.microsoft.com/.default",
+                    "resource": "https://graph.microsoft.com",  # OAuth v1.0 resource
                 }
 
                 response = requests.post(token_url, data=data, timeout=30)
@@ -1013,8 +969,51 @@ class AzureSessionManager(SessionManager):
                     return True
 
             except Exception as e:
-                console.print(f"[red]Failed to get Graph token from refresh token: {e}[/red]")
+                console.print(f"[yellow]Failed to get Graph token from refresh token: {e}[/yellow]")
+                console.print("[dim]Falling back to other methods...[/dim]")
+                # Don't return False, try other methods below
+
+        # Method 2: Check if we already have a Graph token (for access_token auth)
+        if auth_method == "access_token":
+            graph_token = self.current_session_data.get("graph_access_token")
+            if graph_token:
+                console.print("[green]✓ Graph token already available in session![/green]")
+                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                return True
+            else:
+                console.print("[yellow]No Graph token stored. Use 'set_token' to add a Graph API token.[/yellow]")
                 return False
+
+        # Method 3: Try to get token via Azure SDK credential
+        if auth_method in ["service_principal", "interactive", "device_code", "password", "managed_identity"]:
+            try:
+                credential = self.get_credential(scope="graph")
+                if credential:
+                    # Request Graph scope token
+                    token = credential.get_token("https://graph.microsoft.com/.default")
+
+                    if token and token.token:
+                        # Store in session
+                        import time
+                        self.current_session_data["graph_access_token"] = token.token
+                        self.current_session_data["graph_token_expires_at"] = token.expires_on
+                        self.save_current_session()
+
+                        from datetime import datetime
+                        console.print("[green]✓ Graph API token obtained successfully![/green]")
+                        console.print(f"[dim]Token expires at: {datetime.fromtimestamp(token.expires_on).strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+                        console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                        return True
+            except Exception as e:
+                console.print(f"[yellow]Failed to get token via SDK: {e}[/yellow]")
+                # Fallback to Azure CLI if SDK fails
+
+        # Method 4: Try Azure CLI (works for az_cli auth or as fallback)
+        if auth_method == "az_cli" or auth_method in ["service_principal", "interactive", "device_code"]:
+            console.print("[dim]Trying to extract token from Azure CLI...[/dim]")
+            if self._auto_extract_graph_token_from_cli():
+                console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                return True
 
         console.print(f"[red]Unable to automatically obtain Graph token with {auth_method} authentication.[/red]")
         console.print("[yellow]Try 'get_graph_token' to authenticate with username/password (ROPC flow).[/yellow]")
@@ -1448,6 +1447,68 @@ class AzureSessionManager(SessionManager):
 
         except Exception as e:
             console.print(f"[dim]Could not extract tenant from token: {e}[/dim]")
+            return None
+
+    def extract_refresh_token_from_msal_cache(self) -> Optional[str]:
+        """
+        Extract refresh token from Azure SDK MSAL cache.
+
+        When using InteractiveBrowserCredential or DeviceCodeCredential,
+        Azure SDK stores refresh tokens in ~/.azure/msal_token_cache.json.
+        This function extracts the refresh token for the current user.
+
+        Returns:
+            Refresh token if found, None otherwise
+        """
+        import os
+        import json
+
+        cache_path = os.path.expanduser("~/.azure/msal_token_cache.json")
+        if not os.path.exists(cache_path):
+            return None
+
+        try:
+            with open(cache_path, 'r') as f:
+                cache_data = json.load(f)
+
+            # Get current user's object ID (home_account_id)
+            user_object_id = self.current_session_data.get("user_object_id")
+            tenant_id = self.current_session_data.get("tenant_id")
+
+            if not user_object_id or not tenant_id:
+                # Try to extract from any Graph token we have
+                graph_token = self.current_session_data.get("graph_access_token")
+                if graph_token:
+                    parts = graph_token.split('.')
+                    if len(parts) == 3:
+                        payload = parts[1]
+                        padding = 4 - len(payload) % 4
+                        if padding != 4:
+                            payload += '=' * padding
+                        decoded = base64.urlsafe_b64decode(payload)
+                        claims = json.loads(decoded)
+                        user_object_id = claims.get('oid')
+                        tenant_id = claims.get('tid')
+
+            if not user_object_id or not tenant_id:
+                return None
+
+            # Look for refresh token in cache
+            refresh_tokens = cache_data.get("RefreshToken", {})
+
+            # Construct home_account_id (format: {oid}.{tenant_id})
+            home_account_id = f"{user_object_id}.{tenant_id}"
+
+            # Find matching refresh token
+            for key, token_data in refresh_tokens.items():
+                if token_data.get("home_account_id") == home_account_id:
+                    # Found matching refresh token
+                    return token_data.get("secret")
+
+            return None
+
+        except Exception as e:
+            console.print(f"[dim]Could not extract refresh token from MSAL cache: {e}[/dim]")
             return None
 
     def sync_subscriptions_from_sdk(self) -> bool:

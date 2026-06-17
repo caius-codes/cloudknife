@@ -557,6 +557,16 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                             if session_mgr.sync_user_info_from_graph():
                                 console.print("[green]User information retrieved.[/green]")
 
+                            # Extract refresh token from MSAL cache for later use
+                            console.print("[dim]Extracting refresh token from MSAL cache...[/dim]")
+                            refresh_token = session_mgr.extract_refresh_token_from_msal_cache()
+                            if refresh_token:
+                                session_mgr.current_session_data["refresh_token"] = refresh_token
+                                session_mgr.save_current_session()
+                                console.print("[green]✓ Refresh token extracted and stored.[/green]")
+                            else:
+                                console.print("[dim]No refresh token found in cache (this is normal for some auth types).[/dim]")
+
                             # Sync subscriptions from SDK
                             console.print("[dim]Retrieving subscriptions...[/dim]")
                             session_mgr.sync_subscriptions_from_sdk()
@@ -1035,54 +1045,68 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
                 console.print("\n[bold cyan]Get Graph API Token[/bold cyan]")
                 console.print("[dim]Similar to PowerShell's Connect-MgGraph[/dim]\n")
 
-                # Try to get token automatically using existing credentials
-                if session_mgr.auto_get_graph_token():
-                    # Success! Token obtained automatically
-                    _log_command(session_mgr, cmd)
-                    continue
+                # Show method selection with scope information
+                console.print("[bold]Select authentication method:[/bold]\n")
 
-                # Automatic method failed, offer manual ROPC authentication
-                console.print("\n[yellow]Automatic token acquisition failed.[/yellow]")
-                console.print("[cyan]Fallback: Manual authentication via ROPC (username/password)[/cyan]")
-                console.print("[yellow]Note: Does not work with MFA-enabled or federated accounts.[/yellow]\n")
+                console.print("  [bold cyan]1[/bold cyan]  [bold]Automatic (from current login)[/bold]")
+                console.print("      [dim]Uses existing authentication (Azure CLI/SDK)[/dim]")
+                console.print("      [yellow]⚠️  Limited scopes:[/yellow] User.Read, Directory.Read, Group.ReadWrite")
+                console.print("      [red]✗ Missing:[/red] Files.Read.All, Sites.Read.All, Mail.Read\n")
 
-                use_manual = Prompt.ask(
-                    "[cyan]Do you want to authenticate manually with username/password? [y/N][/cyan]",
-                    default="N"
-                ).strip().lower()
+                console.print("  [bold green]2[/bold green]  [bold]Manual (username/password - RECOMMENDED)[/bold]")
+                console.print("      [dim]Direct authentication with Microsoft Office client[/dim]")
+                console.print("      [green]✓ Full scopes:[/green] Files.Read.All, Sites.Read.All, Mail.Read + all others")
+                console.print("      [yellow]Note:[/yellow] Does not work with MFA-enabled or federated accounts\n")
 
-                if use_manual != "y":
-                    console.print("[dim]Cancelled. Try other authentication methods first.[/dim]")
-                    _log_command(session_mgr, cmd, status="cancelled")
-                    continue
-
-                # Prompt for credentials
-                username = Prompt.ask("[cyan]Username (email)[/cyan]").strip()
-                if not username:
-                    console.print("[red]Username is required.[/red]")
-                    continue
-
-                password = getpass("Password: ").strip()
-                if not password:
-                    console.print("[red]Password is required.[/red]")
-                    continue
-
-                # Optional: tenant ID (default to "organizations")
-                tenant = Prompt.ask(
-                    "[cyan]Tenant ID (optional, leave empty for auto-detect)[/cyan]",
-                    default=""
+                method = Prompt.ask(
+                    "[cyan]Choose method[/cyan]",
+                    choices=["1", "2"],
+                    default="2"
                 ).strip()
 
-                # Use None if empty (will default to "organizations")
-                tenant_param = tenant if tenant else None
-
-                # Authenticate via ROPC
-                if session_mgr.get_graph_token_via_ropc(username, password, tenant_param):
-                    console.print("\n[green]Success! Graph API token obtained and stored.[/green]")
-                    console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")
+                if method == "1":
+                    # Automatic method
+                    console.print("\n[cyan]Attempting automatic token acquisition...[/cyan]")
+                    if session_mgr.auto_get_graph_token():
+                        console.print("[green]✓ Graph API token obtained![/green]")
+                        console.print("[yellow]⚠️  Note: Token has limited scopes. Files/Sites/Mail may not work.[/yellow]")
+                        console.print("[dim]To get full scopes, run 'get_graph_token' again and choose method 2.[/dim]")
+                    else:
+                        console.print("[red]Automatic token acquisition failed.[/red]")
+                        console.print("[yellow]Try method 2 (manual authentication) instead.[/yellow]")
                 else:
-                    console.print("\n[red]Failed to obtain Graph API token.[/red]")
-                    console.print("[yellow]Check your credentials and try again.[/yellow]")
+                    # Manual ROPC method
+                    console.print("\n[cyan]Manual authentication (ROPC flow)[/cyan]")
+
+                    # Prompt for credentials
+                    username = Prompt.ask("[cyan]Username (email)[/cyan]").strip()
+                    if not username:
+                        console.print("[red]Username is required.[/red]")
+                        _log_command(session_mgr, cmd, status="cancelled")
+                        continue
+
+                    password = getpass("Password: ").strip()
+                    if not password:
+                        console.print("[red]Password is required.[/red]")
+                        _log_command(session_mgr, cmd, status="cancelled")
+                        continue
+
+                    # Optional: tenant ID (default to "organizations")
+                    tenant = Prompt.ask(
+                        "[cyan]Tenant ID (optional, leave empty for auto-detect)[/cyan]",
+                        default=""
+                    ).strip()
+
+                    # Use None if empty (will default to "organizations")
+                    tenant_param = tenant if tenant else None
+
+                    # Authenticate via ROPC
+                    if session_mgr.get_graph_token_via_ropc(username, password, tenant_param):
+                        console.print("\n[green]✓ Graph API token obtained with full scopes![/green]")
+                        console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_files, graph_sharepoint).[/dim]")
+                    else:
+                        console.print("\n[red]Failed to obtain Graph API token.[/red]")
+                        console.print("[yellow]Check your credentials and try again.[/yellow]")
 
                 _log_command(session_mgr, cmd)
 
