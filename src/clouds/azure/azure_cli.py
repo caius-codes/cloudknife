@@ -160,6 +160,7 @@ def build_completer(session_mgr: AzureSessionManager) -> WordCompleter:
         "login_managed_identity",
         "login_password",
         "set_service_principal",
+        "login_service_principal_cert",
         "set_token",
         "set_refresh_token",
         # Enumeration (alphabetically)
@@ -432,6 +433,84 @@ def run_azure_cli(session_mgr: AzureSessionManager) -> str:
 
                 has_login = True
                 show_prompt_status(session_mgr.current_session, has_login)
+                _log_command(session_mgr, cmd)
+
+            elif cmd == "login_service_principal_cert":
+                from getpass import getpass
+                import os
+
+                console.print("\n[bold cyan]Service Principal Authentication with Certificate[/bold cyan]")
+                console.print("[dim]Equivalent to: az login --service-principal --certificate[/dim]\n")
+
+                tenant_id = Prompt.ask("[cyan]Tenant ID[/cyan]").strip()
+                client_id = Prompt.ask("[cyan]Client ID (Application ID)[/cyan]").strip()
+                cert_path = Prompt.ask("[cyan]Certificate path (.pem or .pfx)[/cyan]").strip()
+
+                if not tenant_id or not client_id or not cert_path:
+                    console.print("[red]Tenant ID, Client ID, and Certificate path are required.[/red]")
+                    continue
+
+                # Expand user path (e.g., ~/certs/cert.pem)
+                cert_path = os.path.expanduser(cert_path)
+
+                # Check if certificate file exists
+                if not os.path.exists(cert_path):
+                    console.print(f"[red]Certificate file not found: {cert_path}[/red]")
+                    continue
+
+                # Determine certificate type and ask for password if .pfx/.p12
+                cert_password = None
+                if cert_path.lower().endswith(('.pfx', '.p12')):
+                    console.print("[yellow]PKCS#12 certificate detected (.pfx/.p12)[/yellow]")
+                    has_password = Prompt.ask(
+                        "[cyan]Does the certificate have a password? [y/N][/cyan]",
+                        default="N"
+                    ).strip().lower()
+
+                    if has_password == "y":
+                        cert_password = getpass("Certificate password: ").strip()
+                elif cert_path.lower().endswith('.pem'):
+                    console.print("[dim]PEM certificate detected (.pem)[/dim]")
+                else:
+                    console.print("[yellow]Warning: Unknown certificate format. Supported: .pem, .pfx, .p12[/yellow]")
+                    proceed = Prompt.ask("[cyan]Continue anyway? [y/N][/cyan]", default="N").strip().lower()
+                    if proceed != "y":
+                        continue
+
+                # Store in session
+                session_mgr.current_session_data["auth_method"] = "service_principal_cert"
+                session_mgr.current_session_data["tenant_id"] = tenant_id
+                session_mgr.current_session_data["client_id"] = client_id
+                session_mgr.current_session_data["certificate_path"] = cert_path
+                if cert_password:
+                    session_mgr.current_session_data["certificate_password"] = cert_password
+                session_mgr.save_current_session()
+
+                console.print("[green]✓ Service principal certificate configured successfully.[/green]")
+
+                # Test authentication by getting a token
+                console.print("[dim]Testing authentication...[/dim]")
+                try:
+                    credential = session_mgr.get_credential(scope="management")
+                    if credential:
+                        # Try to get a token to verify it works
+                        token = credential.get_token("https://management.azure.com/.default")
+                        console.print("[green]✓ Authentication successful![/green]")
+
+                        # Sync subscriptions
+                        console.print("[dim]Retrieving subscriptions...[/dim]")
+                        session_mgr.sync_subscriptions_from_sdk()
+
+                        has_login = True
+                        show_prompt_status(session_mgr.current_session, has_login)
+                    else:
+                        console.print("[red]Failed to create credential from certificate.[/red]")
+                        has_login = False
+                except Exception as e:
+                    console.print(f"[red]Authentication test failed: {e}[/red]")
+                    console.print("[yellow]Check certificate path, client ID, and tenant ID.[/yellow]")
+                    has_login = False
+
                 _log_command(session_mgr, cmd)
 
             elif cmd == "login_az_cli":

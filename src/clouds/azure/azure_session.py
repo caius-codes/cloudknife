@@ -267,6 +267,24 @@ class AzureSessionManager(SessionManager):
                     client_secret=self.current_session_data["client_secret"],
                 )
 
+            elif auth_method == "service_principal_cert":
+                from azure.identity import CertificateCredential
+
+                cert_path = self.current_session_data.get("certificate_path")
+                cert_password = self.current_session_data.get("certificate_password")
+
+                if not cert_path:
+                    console.print("[red]Certificate path missing from session.[/red]")
+                    return None
+
+                # CertificateCredential supports both .pem and .pfx/.p12
+                credential = CertificateCredential(
+                    tenant_id=self.current_session_data["tenant_id"],
+                    client_id=self.current_session_data["client_id"],
+                    certificate_path=cert_path,
+                    password=cert_password if cert_password else None,
+                )
+
             elif auth_method == "interactive":
                 tenant_id = self.current_session_data.get("tenant_id")
                 # Use Azure CLI client ID to bypass Conditional Access policies
@@ -985,7 +1003,7 @@ class AzureSessionManager(SessionManager):
                 return False
 
         # Method 3: Try to get token via Azure SDK credential
-        if auth_method in ["service_principal", "interactive", "device_code", "password", "managed_identity"]:
+        if auth_method in ["service_principal", "service_principal_cert", "interactive", "device_code", "password", "managed_identity"]:
             try:
                 credential = self.get_credential(scope="graph")
                 if credential:
@@ -1009,7 +1027,7 @@ class AzureSessionManager(SessionManager):
                 # Fallback to Azure CLI if SDK fails
 
         # Method 4: Try Azure CLI (works for az_cli auth or as fallback)
-        if auth_method == "az_cli" or auth_method in ["service_principal", "interactive", "device_code"]:
+        if auth_method == "az_cli" or auth_method in ["service_principal", "service_principal_cert", "interactive", "device_code"]:
             console.print("[dim]Trying to extract token from Azure CLI...[/dim]")
             if self._auto_extract_graph_token_from_cli():
                 console.print("[dim]You can now use graph_* commands (e.g., graph_mail, graph_teams).[/dim]")

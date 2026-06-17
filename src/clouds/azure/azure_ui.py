@@ -83,6 +83,7 @@ def print_help():
         ("az_login", "Legacy: Try username/password then fallback to browser (use login_az_cli instead)"),
         ("login_az_cli", "Browser login via Azure CLI (recommended for MFA/Conditional Access)"),
         ("set_service_principal", "Service principal auth (tenant_id, client_id, client_secret) — for automation/scripts"),
+        ("login_service_principal_cert", "Service principal auth with certificate (.pem or .pfx) — more secure than client secret"),
         ("login_interactive", "Browser login via SDK (may fail with Conditional Access — use login_az_cli instead)"),
         ("login_device_code", "Device code flow for remote/SSH sessions (shows code to enter on another device)"),
         ("login_password", "Username/password (ROPC flow) — for ADFS/federated tenants or MFA bypass testing"),
