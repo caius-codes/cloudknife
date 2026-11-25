@@ -352,18 +352,31 @@ class WebSocketCommandHandler:
         Execute module in background and stream output.
 
         Delegates to appropriate cloud handler for execution.
+
+        The module_id may carry a cloud‑specific prefix (``aws_``, ``gcp_``)
+        for backward compatibility; this prefix is stripped before routing.
         """
         logger.info(f"[Module] Starting execution: {module_id} (execution_id: {execution_id})")
         try:
             # Update handlers with current session context
             self._sync_session_state()
 
-            # Route to appropriate cloud handler
-            if self.current_cloud == 'aws':
-                # Strip aws_ prefix if present for backward compatibility
-                module_name = module_id.replace('aws_', '') if module_id.startswith('aws_') else module_id
+            # Strip cloud prefix if present (backward compatibility)
+            # e.g. "aws_enumerate_lambda" -> "enumerate_lambda"
+            if module_id.startswith(("aws_", "gcp_")):
+                module_name = module_id[len(module_id.split("_")[0]) + 1:] if "_" in module_id else module_id
+                # More robust stripping: remove first underscore‑separated token
+                parts = module_id.split("_", 1)
+                module_name = parts[1] if len(parts) > 1 else module_id
+            else:
+                module_name = module_id
 
-                # Delegate to AWS handler
+            # -----------------------------------------------------------------
+            # AWS routing
+            # -----------------------------------------------------------------
+            if self.current_cloud == 'aws':
+                # Delegate to AWS handler – each branch calls the same method
+                # that the original if/elif chain called, preserving behaviour.
                 if module_name == 'enumerate_lambda':
                     await self.aws_handler._run_aws_enumerate_lambda(execution_id, params)
                 elif module_name == 'describe_lambda_function':
@@ -442,10 +455,10 @@ class WebSocketCommandHandler:
                         execution_id,
                         f"Unknown AWS module: {module_id}"
                     )
+            # -----------------------------------------------------------------
+            # GCP routing
+            # -----------------------------------------------------------------
             elif self.current_cloud == 'gcp':
-                # Strip gcp_ prefix if present for backward compatibility
-                module_name = module_id.replace('gcp_', '') if module_id.startswith('gcp_') else module_id
-
                 # Delegate to GCP handler
                 if module_name == 'enumerate_compute':
                     await self.gcp_handler._run_gcp_enumerate_compute(execution_id, params)
@@ -510,6 +523,9 @@ class WebSocketCommandHandler:
                         execution_id,
                         f"Unknown GCP module: {module_id}"
                     )
+            # -----------------------------------------------------------------
+            # Azure routing
+            # -----------------------------------------------------------------
             elif self.current_cloud == 'azure':
                 # Azure session and authentication handlers
                 if module_name == 'list_sessions':
