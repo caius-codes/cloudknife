@@ -205,18 +205,23 @@ class SessionManager(ABC):
 
     def delete_all_sessions(self) -> int:
         """
-        Delete all saved sessions (both *.json and *_enum.json) and clear in-memory state.
+        Delete all saved primary sessions and clear in-memory state.
 
-        Returns the number of sessions deleted.
+        Companion files (_enum.json, _key.json) are preserved to avoid
+        losing enumeration data that was saved earlier.
+
+        Returns the number of primary session files deleted.
         """
-        # Delete all .json files (*.json pattern matches session files, *_enum.json, and *_key.json)
         deleted = 0
+
+        # Delete only primary session files (exclude *_enum.json and *_key.json)
         for session_file in self.sessions_dir.glob("*.json"):
+            # Skip companion files - they contain enumeration data to preserve
+            if session_file.name.endswith("_enum.json") or session_file.name.endswith("_key.json"):
+                continue
             try:
                 session_file.unlink()
-                # Count only primary session files, not companion files (_enum.json, _key.json)
-                if not session_file.name.endswith("_enum.json") and not session_file.name.endswith("_key.json"):
-                    deleted += 1
+                deleted += 1
             except Exception:
                 continue
 
